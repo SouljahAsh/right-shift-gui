@@ -30,11 +30,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-
 public final class AlmatyClient implements ClientModInitializer {
     public static final String MOD_ID = "almatyclient";
 
@@ -66,7 +61,6 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static boolean sprintKeyForced;
     private static int forwardTicks;
-    private static final Map<Integer, NameState> FORCED_NAMES = new HashMap<>();
 
     private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
             Identifier.fromNamespaceAndPath(MOD_ID, "controls")
@@ -94,7 +88,6 @@ public final class AlmatyClient implements ClientModInitializer {
             }
 
             tickAutoSprint(client);
-            tickEspLabels(client);
         });
 
         WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
@@ -167,9 +160,6 @@ public final class AlmatyClient implements ClientModInitializer {
 
     public static void setEspEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(ESP_KEY, enabled);
-        if (!enabled) {
-            clearEspLabels(Minecraft.getInstance());
-        }
     }
 
     public static boolean espPlayers() {
@@ -287,75 +277,7 @@ public final class AlmatyClient implements ClientModInitializer {
         if (entity instanceof ItemEntity) {
             return espItems();
         }
-        return entity instanceof LivingEntity && isEspTarget(entity);
-    }
-
-    private static void tickEspLabels(Minecraft client) {
-        boolean canRenderLabels = espName() || espHealth() || espItems();
-        if (client.level == null || client.player == null || !isEspEnabled() || !canRenderLabels) {
-            clearEspLabels(client);
-            return;
-        }
-
-        Set<Integer> active = new HashSet<>();
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (entity == client.player || !isEspLabelTarget(entity)) {
-                continue;
-            }
-
-            String label = entityLabel(entity);
-            active.add(entity.getId());
-            applyEspLabel(entity, label);
-        }
-
-        FORCED_NAMES.keySet().removeIf(id -> {
-            if (active.contains(id)) {
-                return false;
-            }
-
-            Entity entity = client.level.getEntity(id);
-            if (entity != null) {
-                restoreNamePlate(entity);
-            }
-            return true;
-        });
-    }
-
-    private static void applyEspLabel(Entity entity, String label) {
-        NameState state = FORCED_NAMES.get(entity.getId());
-        if (state == null) {
-            state = new NameState(entity.getCustomName(), entity.isCustomNameVisible(), baseDisplayName(entity), "");
-            FORCED_NAMES.put(entity.getId(), state);
-        }
-
-        if (label.equals(state.lastLabel())) {
-            return;
-        }
-
-        entity.setCustomName(Component.literal(label));
-        entity.setCustomNameVisible(true);
-        FORCED_NAMES.put(entity.getId(), new NameState(state.originalName(), state.originalVisible(), state.baseName(), label));
-    }
-
-    private static void restoreNamePlate(Entity entity) {
-        NameState state = FORCED_NAMES.remove(entity.getId());
-        if (state == null) {
-            return;
-        }
-
-        entity.setCustomName(state.originalName());
-        entity.setCustomNameVisible(state.originalVisible());
-    }
-
-    private static void clearEspLabels(Minecraft client) {
-        if (client.level != null) {
-            for (Entity entity : client.level.entitiesForRendering()) {
-                if (FORCED_NAMES.containsKey(entity.getId())) {
-                    restoreNamePlate(entity);
-                }
-            }
-        }
-        FORCED_NAMES.clear();
+        return entity instanceof LivingEntity && isEspTarget(entity) && (espName() || espHealth());
     }
 
     private static void renderWorldOverlays(WorldRenderContext context) {
@@ -420,6 +342,16 @@ public final class AlmatyClient implements ClientModInitializer {
                 .setLineWidth(width);
     }
 
+    public static Component espNameTag(Entity entity) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || entity == client.player || !isEspEnabled() || !isEspLabelTarget(entity)) {
+            return null;
+        }
+
+        String label = entityLabel(entity);
+        return label.isBlank() ? null : Component.literal(label);
+    }
+
     private static String entityLabel(Entity entity) {
         if (entity instanceof ItemEntity itemEntity) {
             return itemLabel(itemEntity);
@@ -452,11 +384,6 @@ public final class AlmatyClient implements ClientModInitializer {
     }
 
     private static String baseDisplayName(Entity entity) {
-        NameState state = FORCED_NAMES.get(entity.getId());
-        if (state != null) {
-            return state.baseName();
-        }
-
         if (entity instanceof Player player) {
             return player.getPlainTextName();
         }
@@ -515,8 +442,5 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static int clampSprintDelay(int ticks) {
         return Math.max(0, Math.min(MAX_SPRINT_START_DELAY_TICKS, ticks));
-    }
-
-    private record NameState(Component originalName, boolean originalVisible, String baseName, String lastLabel) {
     }
 }
