@@ -14,6 +14,7 @@ public final class AlmatyClientScreen extends Screen {
     private static final int RESIZE_RIGHT = 2;
     private static final int RESIZE_TOP = 4;
     private static final int RESIZE_BOTTOM = 8;
+    private static final int RESET_BUTTON_HEIGHT = 28;
     private static final float GUI_SCALE = 2.0F / 3.0F;
 
     private final Screen parent;
@@ -303,7 +304,7 @@ public final class AlmatyClientScreen extends Screen {
             drawModuleCard(graphics, x, y, w, "ESP", "Boxes and labels for selected entities.", AlmatyClient.isEspEnabled(), true);
         } else if (this.activeTab == Tab.OTHER) {
             drawModuleCard(graphics, x, y, w, "Colors", "Adjust the client accent color.", true, true);
-            drawModuleCard(graphics, x, y + 86, w, "Reset GUI", "Restore window size and position.", false, false);
+            drawSmallActionButton(graphics, resetButtonX(), resetButtonY(), resetButtonWidth(), RESET_BUTTON_HEIGHT, "Reset GUI");
         }
     }
 
@@ -346,7 +347,6 @@ public final class AlmatyClientScreen extends Screen {
             drawColorSlider(graphics, x + 22, y + 106, w - 44, "Red", AlmatyClient.guiRed(), 0);
             drawColorSlider(graphics, x + 22, y + 160, w - 44, "Green", AlmatyClient.guiGreen(), 1);
             drawColorSlider(graphics, x + 22, y + 214, w - 44, "Blue", AlmatyClient.guiBlue(), 2);
-            drawActionButton(graphics, x + 22, y + 280, w - 44, "Reset GUI");
         }
     }
 
@@ -389,6 +389,13 @@ public final class AlmatyClientScreen extends Screen {
         graphics.fill(x, y, x + w, y + 34, AlmatyClient.accentColor(110));
         graphics.fill(x, y, x + w, y + 1, AlmatyClient.accentColor(255));
         graphics.drawCenteredString(this.font, title, x + w / 2, y + 12, 0xFFFFFFFF);
+    }
+
+    private void drawSmallActionButton(GuiGraphics graphics, int x, int y, int w, int h, String title) {
+        graphics.fill(x, y, x + w, y + h, AlmatyClient.accentColor(115));
+        graphics.fill(x, y, x + w, y + 1, AlmatyClient.accentColor(255));
+        graphics.fill(x, y + h - 1, x + w, y + h, 0xFF171D2B);
+        graphics.drawCenteredString(this.font, title, x + w / 2, y + 9, 0xFFFFFFFF);
     }
 
     private void drawColorSlider(GuiGraphics graphics, int x, int y, int w, String label, int value, int index) {
@@ -454,8 +461,7 @@ public final class AlmatyClientScreen extends Screen {
             }
             return clickEspDetail(mouseX, y);
         } else if (this.activeTab == Tab.OTHER) {
-            if (inside(mouseX, y, moduleListX(), contentViewportY() + 144, moduleListWidth(), 70)
-                    || inside(mouseX, y, detailX() + 22, contentViewportY() + 280, detailWidth() - 44, 34)) {
+            if (inside(mouseX, mouseY, resetButtonX(), resetButtonY(), resetButtonWidth(), RESET_BUTTON_HEIGHT)) {
                 resetPanel();
                 return true;
             }
@@ -698,6 +704,18 @@ public final class AlmatyClientScreen extends Screen {
 
     private int moduleListWidth() {
         return Math.max(210, Math.min(290, (this.panelWidth - sidebarWidth() - 56) * 38 / 100));
+    }
+
+    private int resetButtonX() {
+        return moduleListX();
+    }
+
+    private int resetButtonY() {
+        return contentViewportY() + contentViewportHeight() - RESET_BUTTON_HEIGHT - 8;
+    }
+
+    private int resetButtonWidth() {
+        return Math.min(124, moduleListWidth());
     }
 
     private int detailX() {
