@@ -110,7 +110,7 @@ public final class CombatAutomation {
         if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
             return;
         }
-        syncServerRotation(player, target);
+        syncServerRotation(player, target, auraRotate());
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
@@ -260,17 +260,21 @@ public final class CombatAutomation {
         return new Vec3(x, targetY, z);
     }
 
-    private static void syncServerRotation(LocalPlayer player, Entity target) {
+    private static void syncServerRotation(LocalPlayer player, Entity target, boolean applyVisualRotation) {
         if (player.connection == null) {
             return;
         }
 
         float[] rotation = targetRotation(player, target);
-        player.setYRot(rotation[0]);
-        player.setXRot(clamp(rotation[1], -90.0F, 90.0F));
-        player.yHeadRot = player.getYRot();
-        player.yBodyRot = player.getYRot();
-        player.connection.send(new ServerboundMovePlayerPacket.Rot(player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
+        float yaw = rotation[0];
+        float pitch = clamp(rotation[1], -90.0F, 90.0F);
+        if (applyVisualRotation) {
+            player.setYRot(yaw);
+            player.setXRot(pitch);
+            player.yHeadRot = yaw;
+            player.yBodyRot = yaw;
+        }
+        player.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, player.onGround(), player.horizontalCollision));
     }
 
     public static boolean isAuraEnabled() {
