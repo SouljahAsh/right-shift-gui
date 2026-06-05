@@ -14,6 +14,7 @@ public final class AlmatyClientScreen extends Screen {
     private static final int RESIZE_RIGHT = 2;
     private static final int RESIZE_TOP = 4;
     private static final int RESIZE_BOTTOM = 8;
+    private static final float GUI_SCALE = 2.0F / 3.0F;
 
     private final Screen parent;
     private final long openedAt;
@@ -51,8 +52,8 @@ public final class AlmatyClientScreen extends Screen {
         if (!this.layoutInitialized) {
             this.panelWidth = AlmatyConfig.getInt("gui.width", this.panelWidth);
             this.panelHeight = AlmatyConfig.getInt("gui.height", this.panelHeight);
-            this.panelX = AlmatyConfig.getInt("gui.x", this.width / 2 - this.panelWidth / 2);
-            this.panelY = AlmatyConfig.getInt("gui.y", this.height / 2 - this.panelHeight / 2);
+            this.panelX = AlmatyConfig.getInt("gui.x", this.width / 2 - scaled(this.panelWidth) / 2);
+            this.panelY = AlmatyConfig.getInt("gui.y", this.height / 2 - scaled(this.panelHeight) / 2);
             this.activeTab = readSavedTab();
             this.layoutInitialized = true;
         }
@@ -69,24 +70,34 @@ public final class AlmatyClientScreen extends Screen {
         int animatedY = this.panelY + Math.round((1.0F - progress) * 18.0F);
         int animatedHeight = this.panelHeight;
 
-        drawShell(graphics, animatedY, animatedHeight);
-        if (progress > 0.04F) {
-            drawSidebar(graphics, animatedY);
-            drawTopBar(graphics, animatedY);
-            drawContent(graphics, animatedY);
-            drawResizeHandles(graphics, animatedY);
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(this.panelX, animatedY);
+        graphics.pose().scale(GUI_SCALE, GUI_SCALE);
+        graphics.pose().translate(-this.panelX, -animatedY);
+        try {
+            drawShell(graphics, animatedY, animatedHeight);
+            if (progress > 0.04F) {
+                drawSidebar(graphics, animatedY);
+                drawTopBar(graphics, animatedY);
+                drawContent(graphics, animatedY);
+                drawResizeHandles(graphics, animatedY);
+            }
+        } finally {
+            graphics.pose().popMatrix();
         }
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        double mouseX = event.x();
-        double mouseY = event.y();
+        double physicalMouseX = event.x();
+        double physicalMouseY = event.y();
+        double mouseX = toLogicalX(physicalMouseX);
+        double mouseY = toLogicalY(physicalMouseY);
 
-        this.resizeMode = findResizeMode(mouseX, mouseY);
+        this.resizeMode = findResizeMode(physicalMouseX, physicalMouseY);
         if (this.resizeMode != 0) {
-            this.resizeStartMouseX = mouseX;
-            this.resizeStartMouseY = mouseY;
+            this.resizeStartMouseX = physicalMouseX;
+            this.resizeStartMouseY = physicalMouseY;
             this.resizeStartPanelX = this.panelX;
             this.resizeStartPanelY = this.panelY;
             this.resizeStartPanelWidth = this.panelWidth;
@@ -120,8 +131,8 @@ public final class AlmatyClientScreen extends Screen {
 
         if (isInHeader(mouseX, mouseY)) {
             this.dragging = true;
-            this.dragOffsetX = mouseX - this.panelX;
-            this.dragOffsetY = mouseY - this.panelY;
+            this.dragOffsetX = physicalMouseX - this.panelX;
+            this.dragOffsetY = physicalMouseY - this.panelY;
             return true;
         }
 
@@ -131,7 +142,7 @@ public final class AlmatyClientScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         if (this.activeSlider >= 0) {
-            updateColorSlider(this.activeSlider, event.x());
+            updateColorSlider(this.activeSlider, toLogicalX(event.x()));
             return true;
         }
 
@@ -165,7 +176,9 @@ public final class AlmatyClientScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (!inside(mouseX, mouseY, contentViewportX(), contentViewportY(), contentViewportWidth(), contentViewportHeight())) {
+        double logicalMouseX = toLogicalX(mouseX);
+        double logicalMouseY = toLogicalY(mouseY);
+        if (!inside(logicalMouseX, logicalMouseY, contentViewportX(), contentViewportY(), contentViewportWidth(), contentViewportHeight())) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
 
@@ -316,8 +329,8 @@ public final class AlmatyClientScreen extends Screen {
         if (this.activeTab == Tab.MOVEMENT) {
             drawDetailHeader(graphics, x, y, w, "Sprint", AlmatyClient.isAutoSprintEnabled());
             drawSettingRow(graphics, x, y + 98, w, "Mode", "Vanilla key-hold sprint.", "Vanilla");
-            drawSettingToggle(graphics, x, y + 154, w, "Stop On Collision", "Releases sprint when colliding.", true);
-            drawSettingRow(graphics, x, y + 210, w, "Start Delay", "Minimal delay before sprinting.", "1 tick");
+            drawSettingToggle(graphics, x, y + 154, w, "Stop On Collision", "Releases sprint when colliding.", AlmatyClient.sprintStopOnCollision());
+            drawSettingRow(graphics, x, y + 210, w, "Start Delay", "Minimal delay before sprinting.", sprintDelayText());
         } else if (this.activeTab == Tab.VISUALS) {
             drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
             drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
@@ -426,6 +439,7 @@ public final class AlmatyClientScreen extends Screen {
                 AlmatyClient.toggleAutoSprint();
                 return true;
             }
+            return clickSprintDetail(mouseX, y);
         } else if (this.activeTab == Tab.VISUALS) {
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
                     || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 160)) {
@@ -447,6 +461,21 @@ public final class AlmatyClientScreen extends Screen {
             }
         }
 
+        return false;
+    }
+
+    private boolean clickSprintDetail(double mouseX, int y) {
+        int x = detailX();
+        int w = detailWidth();
+        int base = contentViewportY();
+        if (inside(mouseX, y, x + 20, base + 154, w - 40, 48)) {
+            AlmatyClient.setSprintStopOnCollision(!AlmatyClient.sprintStopOnCollision());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 210, w - 40, 48)) {
+            AlmatyClient.cycleSprintStartDelayTicks();
+            return true;
+        }
         return false;
     }
 
@@ -545,16 +574,18 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int findResizeMode(double mouseX, double mouseY) {
+        int visualWidth = scaled(this.panelWidth);
+        int visualHeight = scaled(this.panelHeight);
         boolean inVerticalRange = mouseY >= this.panelY - RESIZE_HANDLE
-                && mouseY <= this.panelY + this.panelHeight + RESIZE_HANDLE;
+                && mouseY <= this.panelY + visualHeight + RESIZE_HANDLE;
         boolean inHorizontalRange = mouseX >= this.panelX - RESIZE_HANDLE
-                && mouseX <= this.panelX + this.panelWidth + RESIZE_HANDLE;
+                && mouseX <= this.panelX + visualWidth + RESIZE_HANDLE;
         boolean left = inVerticalRange && mouseX >= this.panelX - RESIZE_HANDLE && mouseX <= this.panelX + RESIZE_HANDLE;
-        boolean right = inVerticalRange && mouseX >= this.panelX + this.panelWidth - RESIZE_HANDLE
-                && mouseX <= this.panelX + this.panelWidth + RESIZE_HANDLE;
+        boolean right = inVerticalRange && mouseX >= this.panelX + visualWidth - RESIZE_HANDLE
+                && mouseX <= this.panelX + visualWidth + RESIZE_HANDLE;
         boolean top = inHorizontalRange && mouseY >= this.panelY - RESIZE_HANDLE && mouseY <= this.panelY + RESIZE_HANDLE;
-        boolean bottom = inHorizontalRange && mouseY >= this.panelY + this.panelHeight - RESIZE_HANDLE
-                && mouseY <= this.panelY + this.panelHeight + RESIZE_HANDLE;
+        boolean bottom = inHorizontalRange && mouseY >= this.panelY + visualHeight - RESIZE_HANDLE
+                && mouseY <= this.panelY + visualHeight + RESIZE_HANDLE;
 
         int mode = 0;
         if (left) {
@@ -581,21 +612,21 @@ public final class AlmatyClientScreen extends Screen {
         int height = this.resizeStartPanelHeight;
 
         if ((this.resizeMode & RESIZE_LEFT) != 0) {
-            int fixedRight = this.resizeStartPanelX + this.resizeStartPanelWidth;
-            x = Math.max(6, Math.min(this.resizeStartPanelX + dx, fixedRight - MIN_PANEL_WIDTH));
-            width = fixedRight - x;
+            int fixedRight = this.resizeStartPanelX + scaled(this.resizeStartPanelWidth);
+            x = Math.max(6, Math.min(this.resizeStartPanelX + dx, fixedRight - scaled(MIN_PANEL_WIDTH)));
+            width = unscaled(fixedRight - x);
         } else if ((this.resizeMode & RESIZE_RIGHT) != 0) {
-            int right = Math.min(this.width - 6, Math.max(this.resizeStartPanelX + MIN_PANEL_WIDTH, this.resizeStartPanelX + this.resizeStartPanelWidth + dx));
-            width = right - this.resizeStartPanelX;
+            int right = Math.min(this.width - 6, Math.max(this.resizeStartPanelX + scaled(MIN_PANEL_WIDTH), this.resizeStartPanelX + scaled(this.resizeStartPanelWidth) + dx));
+            width = unscaled(right - this.resizeStartPanelX);
         }
 
         if ((this.resizeMode & RESIZE_TOP) != 0) {
-            int fixedBottom = this.resizeStartPanelY + this.resizeStartPanelHeight;
-            y = Math.max(6, Math.min(this.resizeStartPanelY + dy, fixedBottom - MIN_PANEL_HEIGHT));
-            height = fixedBottom - y;
+            int fixedBottom = this.resizeStartPanelY + scaled(this.resizeStartPanelHeight);
+            y = Math.max(6, Math.min(this.resizeStartPanelY + dy, fixedBottom - scaled(MIN_PANEL_HEIGHT)));
+            height = unscaled(fixedBottom - y);
         } else if ((this.resizeMode & RESIZE_BOTTOM) != 0) {
-            int bottom = Math.min(this.height - 6, Math.max(this.resizeStartPanelY + MIN_PANEL_HEIGHT, this.resizeStartPanelY + this.resizeStartPanelHeight + dy));
-            height = bottom - this.resizeStartPanelY;
+            int bottom = Math.min(this.height - 6, Math.max(this.resizeStartPanelY + scaled(MIN_PANEL_HEIGHT), this.resizeStartPanelY + scaled(this.resizeStartPanelHeight) + dy));
+            height = unscaled(bottom - this.resizeStartPanelY);
         }
 
         this.panelX = x;
@@ -607,10 +638,10 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private void clampPanelToScreen() {
-        this.panelWidth = Math.min(Math.max(this.panelWidth, MIN_PANEL_WIDTH), Math.max(MIN_PANEL_WIDTH, this.width - 12));
-        this.panelHeight = Math.min(Math.max(this.panelHeight, MIN_PANEL_HEIGHT), Math.max(MIN_PANEL_HEIGHT, this.height - 12));
-        this.panelX = Math.max(6, Math.min(this.panelX, this.width - this.panelWidth - 6));
-        this.panelY = Math.max(6, Math.min(this.panelY, this.height - this.panelHeight - 6));
+        this.panelWidth = Math.min(Math.max(this.panelWidth, MIN_PANEL_WIDTH), Math.max(MIN_PANEL_WIDTH, unscaled(this.width - 12)));
+        this.panelHeight = Math.min(Math.max(this.panelHeight, MIN_PANEL_HEIGHT), Math.max(MIN_PANEL_HEIGHT, unscaled(this.height - 12)));
+        this.panelX = Math.max(6, Math.min(this.panelX, this.width - scaled(this.panelWidth) - 6));
+        this.panelY = Math.max(6, Math.min(this.panelY, this.height - scaled(this.panelHeight) - 6));
     }
 
     private void clampScroll() {
@@ -629,8 +660,8 @@ public final class AlmatyClientScreen extends Screen {
     private void resetPanel() {
         this.panelWidth = 860;
         this.panelHeight = 500;
-        this.panelX = this.width / 2 - this.panelWidth / 2;
-        this.panelY = this.height / 2 - this.panelHeight / 2;
+        this.panelX = this.width / 2 - scaled(this.panelWidth) / 2;
+        this.panelY = this.height / 2 - scaled(this.panelHeight) / 2;
         this.contentScroll = 0;
         clampPanelToScreen();
         savePanel();
@@ -727,6 +758,27 @@ public final class AlmatyClientScreen extends Screen {
         }
 
         return this.font.plainSubstrByWidth(text, maxWidth - suffixWidth) + suffix;
+    }
+
+    private static String sprintDelayText() {
+        int ticks = AlmatyClient.sprintStartDelayTicks();
+        return ticks == 1 ? "1 tick" : ticks + " ticks";
+    }
+
+    private double toLogicalX(double mouseX) {
+        return this.panelX + (mouseX - this.panelX) / GUI_SCALE;
+    }
+
+    private double toLogicalY(double mouseY) {
+        return this.panelY + (mouseY - this.panelY) / GUI_SCALE;
+    }
+
+    private static int scaled(int value) {
+        return Math.round(value * GUI_SCALE);
+    }
+
+    private static int unscaled(int value) {
+        return Math.round(value / GUI_SCALE);
     }
 
     private static boolean inside(double mouseX, double mouseY, int x, int y, int w, int h) {

@@ -46,8 +46,11 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ESP_ITEMS_KEY = "esp.items";
     private static final String ESP_NAME_KEY = "esp.name";
     private static final String ESP_HEALTH_KEY = "esp.health";
+    private static final String SPRINT_STOP_ON_COLLISION_KEY = "sprint.stopOnCollision";
+    private static final String SPRINT_START_DELAY_KEY = "sprint.startDelayTicks";
     private static final int ESP_LINE_WIDTH = 2;
-    private static final int AUTO_SPRINT_DELAY_TICKS = 1;
+    private static final int DEFAULT_SPRINT_START_DELAY_TICKS = 1;
+    private static final int MAX_SPRINT_START_DELAY_TICKS = 10;
 
     private static final RenderPipeline ESP_LINES_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
             .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "esp_lines"))
@@ -116,6 +119,37 @@ public final class AlmatyClient implements ClientModInitializer {
         AlmatyConfig.setBoolean(AUTO_SPRINT_KEY, enabled);
         if (!enabled) {
             releaseForcedSprint(Minecraft.getInstance());
+        }
+    }
+
+    public static boolean sprintStopOnCollision() {
+        return AlmatyConfig.getBoolean(SPRINT_STOP_ON_COLLISION_KEY, true);
+    }
+
+    public static void setSprintStopOnCollision(boolean enabled) {
+        AlmatyConfig.setBoolean(SPRINT_STOP_ON_COLLISION_KEY, enabled);
+        if (enabled) {
+            Minecraft client = Minecraft.getInstance();
+            if (client.player != null && client.player.horizontalCollision) {
+                releaseForcedSprint(client);
+            }
+        }
+    }
+
+    public static int sprintStartDelayTicks() {
+        return clampSprintDelay(AlmatyConfig.getInt(SPRINT_START_DELAY_KEY, DEFAULT_SPRINT_START_DELAY_TICKS));
+    }
+
+    public static void setSprintStartDelayTicks(int ticks) {
+        AlmatyConfig.setInt(SPRINT_START_DELAY_KEY, clampSprintDelay(ticks));
+    }
+
+    public static void cycleSprintStartDelayTicks() {
+        int ticks = sprintStartDelayTicks();
+        if (ticks >= MAX_SPRINT_START_DELAY_TICKS) {
+            setSprintStartDelayTicks(0);
+        } else {
+            setSprintStartDelayTicks(ticks + 1);
         }
     }
 
@@ -211,17 +245,20 @@ public final class AlmatyClient implements ClientModInitializer {
         boolean blocked = client.player.isCrouching()
                 || client.player.isUsingItem()
                 || client.player.isPassenger()
-                || client.player.horizontalCollision
                 || !client.player.onGround()
                 || client.player.getFoodData().getFoodLevel() <= 6;
+        if (sprintStopOnCollision() && client.player.horizontalCollision) {
+            blocked = true;
+        }
 
-        if (walkingForward && !blocked) {
+        boolean canSprint = walkingForward && !blocked;
+        if (canSprint) {
             forwardTicks++;
         } else {
             forwardTicks = 0;
         }
 
-        if (forwardTicks >= AUTO_SPRINT_DELAY_TICKS) {
+        if (canSprint && forwardTicks >= sprintStartDelayTicks()) {
             client.options.keySprint.setDown(true);
             sprintKeyForced = true;
         } else {
@@ -474,6 +511,10 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static int clampColor(int value) {
         return Math.max(0, Math.min(255, value));
+    }
+
+    private static int clampSprintDelay(int ticks) {
+        return Math.max(0, Math.min(MAX_SPRINT_START_DELAY_TICKS, ticks));
     }
 
     private record NameState(Component originalName, boolean originalVisible, String baseName, String lastLabel) {
