@@ -27,7 +27,6 @@ public final class AlmatyClientScreen extends Screen {
     private double lastMouseX;
     private double lastMouseY;
     private Button autoSprintButton;
-    private Button altManagerButton;
     private Button closeButton;
 
     public AlmatyClientScreen(Screen parent) {
@@ -51,15 +50,6 @@ public final class AlmatyClientScreen extends Screen {
                 button -> {
                     AlmatyClient.toggleAutoSprint();
                     button.setMessage(autoSprintText());
-                }
-        ).bounds(0, 0, 180, 20).build());
-
-        this.altManagerButton = this.addRenderableWidget(Button.builder(
-                Component.translatable("screen.almatyclient.alt_manager"),
-                button -> {
-                    if (this.minecraft != null) {
-                        this.minecraft.setScreen(new AltManagerScreen(this));
-                    }
                 }
         ).bounds(0, 0, 180, 20).build());
 
@@ -192,17 +182,10 @@ public final class AlmatyClientScreen extends Screen {
             this.autoSprintButton.setAlpha(eased);
         }
 
-        if (this.altManagerButton != null) {
-            this.altManagerButton.setWidth(buttonWidth);
-            this.altManagerButton.setX(centerX);
-            this.altManagerButton.setY(panelY + 114);
-            this.altManagerButton.setAlpha(eased);
-        }
-
         if (this.closeButton != null) {
             this.closeButton.setWidth(buttonWidth);
             this.closeButton.setX(centerX);
-            this.closeButton.setY(panelY + 142);
+            this.closeButton.setY(panelY + 114);
             this.closeButton.setAlpha(eased);
         }
     }
