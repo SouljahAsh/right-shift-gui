@@ -24,6 +24,27 @@ processResources {
     }
 }
 
+def minecraftModsDir = providers.gradleProperty("minecraft_mods_dir")
+        .orElse(providers.environmentVariable("APPDATA").map { "$it/.minecraft/mods" })
+        .orElse(providers.systemProperty("user.home").map { "$it/.minecraft/mods" })
+
+tasks.register("installClientJar", Copy) {
+    dependsOn tasks.named("remapJar")
+    from tasks.named("remapJar").flatMap { it.archiveFile }
+    into minecraftModsDir
+
+    doFirst {
+        def targetDir = minecraftModsDir.get()
+        delete fileTree(targetDir) {
+            include "${project.archives_base_name}-*.jar"
+        }
+    }
+}
+
+tasks.named("build") {
+    finalizedBy tasks.named("installClientJar")
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.release = 21
 }
