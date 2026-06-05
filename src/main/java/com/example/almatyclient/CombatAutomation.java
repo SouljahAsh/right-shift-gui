@@ -33,9 +33,10 @@ public final class CombatAutomation {
     private static final double LEAP_STOP_DISTANCE = 2.55D;
     private static final double LEAP_STOP_DISTANCE_SQ = LEAP_STOP_DISTANCE * LEAP_STOP_DISTANCE;
     private static final float CRITICAL_FALL_DISTANCE = 0.11F;
-    private static final float MAX_YAW_STEP = 52.0F;
-    private static final float MAX_PITCH_STEP = 38.0F;
-    private static final float AIM_TOLERANCE = 2.8F;
+    private static final float MAX_YAW_STEP = 36.0F;
+    private static final float MAX_PITCH_STEP = 26.0F;
+    private static final float AIM_TOLERANCE = 3.4F;
+    private static final float ROTATION_DEADZONE = 0.18F;
     private static final int REQUIRED_AIM_READY_TICKS = 1;
     private static final int ATTACK_SYNC_TICKS = 3;
     private static final int LEAP_JUMP_COOLDOWN_TICKS = 5;
@@ -112,9 +113,6 @@ public final class CombatAutomation {
         if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
             return;
         }
-        if (auraRotate()) {
-            syncVisualRotation(player, target);
-        }
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
@@ -177,10 +175,14 @@ public final class CombatAutomation {
         float currentPitch = player.getXRot();
         float yawDelta = wrapDegrees(yaw - currentYaw);
         float pitchDelta = pitch - currentPitch;
-        float yawFactor = Math.abs(yawDelta) > 18.0F ? 0.82F : 0.64F;
-        float pitchFactor = Math.abs(pitchDelta) > 12.0F ? 0.78F : 0.58F;
-        float nextYaw = currentYaw + clamp(yawDelta * yawFactor, -MAX_YAW_STEP, MAX_YAW_STEP);
-        float nextPitch = currentPitch + clamp(pitchDelta * pitchFactor, -MAX_PITCH_STEP, MAX_PITCH_STEP);
+        if (Math.abs(yawDelta) <= ROTATION_DEADZONE && Math.abs(pitchDelta) <= ROTATION_DEADZONE) {
+            return;
+        }
+
+        float yawStep = rotationStep(yawDelta, MAX_YAW_STEP);
+        float pitchStep = rotationStep(pitchDelta, MAX_PITCH_STEP);
+        float nextYaw = currentYaw + yawStep;
+        float nextPitch = currentPitch + pitchStep;
 
         player.setYRot(nextYaw);
         player.setXRot(clamp(nextPitch, -90.0F, 90.0F));
@@ -189,6 +191,10 @@ public final class CombatAutomation {
     }
 
     private static boolean isAimReady(LocalPlayer player, Entity target) {
+        if (lookIntersectsHitbox(player, target)) {
+            return true;
+        }
+
         float[] rotation = targetRotation(player, target);
         float yawDelta = Math.abs(wrapDegrees(rotation[0] - player.getYRot()));
         float pitchDelta = Math.abs(rotation[1] - player.getXRot());
@@ -234,6 +240,13 @@ public final class CombatAutomation {
         return distanceToHitboxSqr(player.getEyePosition(), target.getBoundingBox()) <= ATTACK_REACH_SQ;
     }
 
+    private static boolean lookIntersectsHitbox(LocalPlayer player, Entity target) {
+        Vec3 eye = player.getEyePosition();
+        Vec3 look = player.getViewVector(1.0F);
+        Vec3 end = eye.add(look.scale(ATTACK_REACH + 0.15D));
+        return target.getBoundingBox().inflate(0.08D).clip(eye, end).isPresent();
+    }
+
     private static double targetScore(Entity entity, double distanceSq) {
         if (auraTargetMode() == TARGET_LOWEST_HEALTH && entity instanceof LivingEntity living) {
             return living.getHealth();
@@ -252,26 +265,24 @@ public final class CombatAutomation {
 
     private static Vec3 aimPoint(LocalPlayer player, Entity target) {
         AABB box = target.getBoundingBox();
-        double x = (box.minX + box.maxX) * 0.5D;
-        double z = (box.minZ + box.maxZ) * 0.5D;
-        double targetY = box.minY + target.getBbHeight() * (target instanceof Player ? 0.62D : 0.54D);
-        double eyeY = player.getEyeY();
+        Vec3 eye = player.getEyePosition();
+        Vec3 look = player.getViewVector(1.0F);
+        double distance = eye.distanceTo(hitboxCenter(target));
+        Vec3 projected = eye.add(look.scale(distance));
 
-        targetY = clamp(targetY, box.minY + 0.12D, box.maxY - 0.08D);
-        if (Math.abs(eyeY - targetY) > 1.4D) {
-            targetY = clamp(eyeY - Math.signum(eyeY - targetY) * 1.1D, box.minY + 0.12D, box.maxY - 0.08D);
+        if (box.inflate(0.04D).contains(projected)) {
+            return new Vec3(
+                    clamp(projected.x, box.minX + 0.05D, box.maxX - 0.05D),
+                    clamp(projected.y, box.minY + 0.08D, box.maxY - 0.08D),
+                    clamp(projected.z, box.minZ + 0.05D, box.maxZ - 0.05D)
+            );
         }
-        return new Vec3(x, targetY, z);
-    }
 
-    private static void syncVisualRotation(LocalPlayer player, Entity target) {
-        float[] rotation = targetRotation(player, target);
-        float yaw = rotation[0];
-        float pitch = clamp(rotation[1], -90.0F, 90.0F);
-        player.setYRot(yaw);
-        player.setXRot(pitch);
-        player.yHeadRot = yaw;
-        player.yBodyRot = yaw;
+        double x = clamp(projected.x, box.minX + 0.08D, box.maxX - 0.08D);
+        double z = clamp(projected.z, box.minZ + 0.08D, box.maxZ - 0.08D);
+        double y = box.minY + target.getBbHeight() * (target instanceof Player ? 0.58D : 0.52D);
+        y = clamp(y, box.minY + 0.12D, box.maxY - 0.10D);
+        return new Vec3(x, y, z);
     }
 
     public static boolean isAuraEnabled() {
@@ -401,6 +412,16 @@ public final class CombatAutomation {
             value += 360.0F;
         }
         return value;
+    }
+
+    private static float rotationStep(float delta, float maxStep) {
+        float distance = Math.abs(delta);
+        float factor = distance > 25.0F ? 0.72F : distance > 8.0F ? 0.58F : 0.42F;
+        float step = clamp(delta * factor, -maxStep, maxStep);
+        if (Math.abs(step) > distance) {
+            return delta;
+        }
+        return step;
     }
 
     private static float clamp(float value, float min, float max) {
