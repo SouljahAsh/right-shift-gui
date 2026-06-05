@@ -337,9 +337,12 @@ public final class AlmatyClientScreen extends Screen {
         } else if (this.activeTab == Tab.COMBAT) {
             drawDetailHeader(graphics, x, y, w, "Aura", CombatAutomation.isAuraEnabled());
             drawSettingRow(graphics, x, y + 98, w, "Range", "Target scan distance.", auraRangeText());
-            drawSettingToggle(graphics, x, y + 154, w, "Rotate To Target", "Looks at the target hitbox center.", CombatAutomation.auraRotate());
-            drawCheckRow(graphics, x, y + 214, w, "Players", CombatAutomation.auraPlayers());
-            drawCheckRow(graphics, x, y + 254, w, "Mobs", CombatAutomation.auraMobs());
+            drawCheckRow(graphics, x, y + 154, w, "Jump Only", CombatAutomation.auraJumpOnly());
+            drawSettingRow(graphics, x, y + 194, w, "Move Mode", "Jump movement behavior.", CombatAutomation.auraMoveModeText());
+            drawSettingRow(graphics, x, y + 250, w, "Target Mode", "Target priority selector.", CombatAutomation.auraTargetModeText());
+            drawSettingToggle(graphics, x, y + 306, w, "Rotate To Target", "Looks at the target hitbox center.", CombatAutomation.auraRotate());
+            drawCheckRow(graphics, x, y + 366, w, "Players", CombatAutomation.auraPlayers());
+            drawCheckRow(graphics, x, y + 406, w, "Mobs", CombatAutomation.auraMobs());
         } else if (this.activeTab == Tab.VISUALS) {
             drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
             drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
@@ -376,8 +379,8 @@ public final class AlmatyClientScreen extends Screen {
         graphics.fill(x + 20, y, x + w - 20, y + 48, 0x44101828);
         drawStringFit(graphics, title, x + 34, y + 10, w - 180, 0xFFE7ECFF);
         drawStringFit(graphics, hint, x + 34, y + 27, w - 180, 0xFF9BA3B7);
-        graphics.fill(x + w - 114, y + 12, x + w - 34, y + 36, 0x66151B2A);
-        drawStringFit(graphics, value, x + w - 96, y + 19, 58, 0xFFFFFFFF);
+        graphics.fill(x + w - 150, y + 12, x + w - 34, y + 36, 0x66151B2A);
+        drawStringFit(graphics, value, x + w - 132, y + 19, 94, 0xFFFFFFFF);
     }
 
     private void drawSettingToggle(GuiGraphics graphics, int x, int y, int w, String title, String hint, boolean enabled) {
@@ -508,15 +511,27 @@ public final class AlmatyClientScreen extends Screen {
             CombatAutomation.cycleAuraRange();
             return true;
         }
-        if (inside(mouseX, y, x + 20, base + 154, w - 40, 48)) {
+        if (inside(mouseX, y, x + 20, base + 154, w - 40, 34)) {
+            CombatAutomation.setAuraJumpOnly(!CombatAutomation.auraJumpOnly());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 194, w - 40, 48)) {
+            CombatAutomation.cycleAuraMoveMode();
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 250, w - 40, 48)) {
+            CombatAutomation.cycleAuraTargetMode();
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 306, w - 40, 48)) {
             CombatAutomation.setAuraRotate(!CombatAutomation.auraRotate());
             return true;
         }
-        if (inside(mouseX, y, x + 20, base + 214, w - 40, 34)) {
+        if (inside(mouseX, y, x + 20, base + 366, w - 40, 34)) {
             CombatAutomation.setAuraPlayers(!CombatAutomation.auraPlayers());
             return true;
         }
-        if (inside(mouseX, y, x + 20, base + 254, w - 40, 34)) {
+        if (inside(mouseX, y, x + 20, base + 406, w - 40, 34)) {
             CombatAutomation.setAuraMobs(!CombatAutomation.auraMobs());
             return true;
         }
@@ -786,7 +801,7 @@ public final class AlmatyClientScreen extends Screen {
 
     private int detailHeight() {
         if (this.activeTab == Tab.COMBAT) {
-            return 320;
+            return 460;
         }
         if (this.activeTab == Tab.PLAYERS) {
             return 340;

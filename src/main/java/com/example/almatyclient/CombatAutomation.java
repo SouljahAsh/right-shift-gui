@@ -17,10 +17,24 @@ public final class CombatAutomation {
     private static final String AURA_ROTATE_KEY = "aura.rotate";
     private static final String AURA_PLAYERS_KEY = "aura.players";
     private static final String AURA_MOBS_KEY = "aura.mobs";
+    private static final String AURA_JUMP_ONLY_KEY = "aura.jumpOnly";
+    private static final String AURA_MOVE_MODE_KEY = "aura.moveMode";
+    private static final String AURA_TARGET_MODE_KEY = "aura.targetMode";
     private static final int DEFAULT_RANGE_TENTHS = 40;
     private static final int MIN_RANGE_TENTHS = 20;
     private static final int MAX_RANGE_TENTHS = 60;
     private static final int RANGE_STEP_TENTHS = 5;
+    private static final int MOVE_HOLD_POSITION = 0;
+    private static final int MOVE_LEAP_IN = 1;
+    private static final int TARGET_NEAREST = 0;
+    private static final int TARGET_LOWEST_HEALTH = 1;
+    private static final double LEAP_SPEED = 0.28D;
+    private static final float CRITICAL_FALL_DISTANCE = 0.08F;
+    private static final float MAX_YAW_STEP = 10.0F;
+    private static final float MAX_PITCH_STEP = 8.0F;
+    private static final float AIM_TOLERANCE = 2.5F;
+
+    private static int lockedTargetId = -1;
 
     private CombatAutomation() {
     }
@@ -31,34 +45,61 @@ public final class CombatAutomation {
 
     private static void tick(Minecraft client) {
         if (!isAuraEnabled()) {
+            clearLockedTarget();
             return;
         }
         if (client.level == null || client.player == null || client.gameMode == null) {
+            clearLockedTarget();
             return;
         }
 
         LocalPlayer player = client.player;
-        if (player.getAttackStrengthScale(0.0F) < 1.0F) {
-            return;
+        Entity target = lockedTarget(client, player);
+        if (target == null) {
+            target = findTarget(client, player);
+            lockedTargetId = target == null ? -1 : target.getId();
         }
-
-        Entity target = findTarget(client, player);
         if (target == null) {
             return;
         }
 
         if (auraRotate()) {
-            rotateToTarget(player, target);
+            smoothRotateToTarget(player, target);
+            if (!isAimReady(player, target)) {
+                return;
+            }
+        }
+        if (auraJumpOnly() && auraMoveMode() == MOVE_LEAP_IN) {
+            leapTowardTarget(player, target);
+        }
+        if (player.getAttackStrengthScale(0.0F) < 1.0F) {
+            return;
+        }
+        if (auraJumpOnly() && !isCriticalWindow(player)) {
+            return;
         }
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
+    }
+
+    private static Entity lockedTarget(Minecraft client, LocalPlayer player) {
+        if (lockedTargetId < 0 || client.level == null) {
+            return null;
+        }
+
+        Entity entity = client.level.getEntity(lockedTargetId);
+        if (entity == null || !isValidTarget(player, entity)) {
+            clearLockedTarget();
+            return null;
+        }
+        return entity;
     }
 
     private static Entity findTarget(Minecraft client, LocalPlayer player) {
         Vec3 eyePosition = player.getEyePosition();
         Entity bestTarget = null;
         double rangeSq = auraRange() * auraRange();
-        double bestDistanceSq = rangeSq;
+        double bestScore = Double.MAX_VALUE;
 
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!isValidTarget(player, entity)) {
@@ -66,9 +107,14 @@ public final class CombatAutomation {
             }
 
             double distanceSq = eyePosition.distanceToSqr(hitboxCenter(entity));
-            if (distanceSq <= bestDistanceSq) {
+            if (distanceSq > rangeSq) {
+                continue;
+            }
+
+            double score = targetScore(entity, distanceSq);
+            if (score <= bestScore) {
                 bestTarget = entity;
-                bestDistanceSq = distanceSq;
+                bestScore = score;
             }
         }
 
@@ -85,7 +131,29 @@ public final class CombatAutomation {
         return entity instanceof Mob && auraMobs();
     }
 
-    private static void rotateToTarget(LocalPlayer player, Entity target) {
+    private static void smoothRotateToTarget(LocalPlayer player, Entity target) {
+        float[] rotation = targetRotation(player, target);
+        float yaw = rotation[0];
+        float pitch = rotation[1];
+        float currentYaw = player.getYRot();
+        float currentPitch = player.getXRot();
+        float nextYaw = currentYaw + clamp(wrapDegrees(yaw - currentYaw), -MAX_YAW_STEP, MAX_YAW_STEP);
+        float nextPitch = currentPitch + clamp(pitch - currentPitch, -MAX_PITCH_STEP, MAX_PITCH_STEP);
+
+        player.setYRot(nextYaw);
+        player.setXRot(clamp(nextPitch, -90.0F, 90.0F));
+        player.yHeadRot = nextYaw;
+        player.yBodyRot = nextYaw;
+    }
+
+    private static boolean isAimReady(LocalPlayer player, Entity target) {
+        float[] rotation = targetRotation(player, target);
+        float yawDelta = Math.abs(wrapDegrees(rotation[0] - player.getYRot()));
+        float pitchDelta = Math.abs(rotation[1] - player.getXRot());
+        return yawDelta <= AIM_TOLERANCE && pitchDelta <= AIM_TOLERANCE;
+    }
+
+    private static float[] targetRotation(LocalPlayer player, Entity target) {
         Vec3 eyePosition = player.getEyePosition();
         Vec3 center = hitboxCenter(target);
         double dx = center.x - eyePosition.x;
@@ -95,11 +163,31 @@ public final class CombatAutomation {
 
         float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
         float pitch = (float) (-Math.toDegrees(Math.atan2(dy, horizontalDistance)));
+        return new float[]{yaw, pitch};
+    }
 
-        player.setYRot(yaw);
-        player.setXRot(pitch);
-        player.yHeadRot = yaw;
-        player.yBodyRot = yaw;
+    private static void leapTowardTarget(LocalPlayer player, Entity target) {
+        Vec3 center = hitboxCenter(target);
+        Vec3 direction = new Vec3(center.x - player.getX(), 0.0D, center.z - player.getZ());
+        if (direction.lengthSqr() > 0.0001D) {
+            direction = direction.normalize().scale(LEAP_SPEED);
+            Vec3 velocity = player.getDeltaMovement();
+            player.setDeltaMovement(direction.x, velocity.y, direction.z);
+        }
+        if (player.onGround()) {
+            player.jumpFromGround();
+        }
+    }
+
+    private static boolean isCriticalWindow(LocalPlayer player) {
+        return !player.onGround() && player.fallDistance >= CRITICAL_FALL_DISTANCE;
+    }
+
+    private static double targetScore(Entity entity, double distanceSq) {
+        if (auraTargetMode() == TARGET_LOWEST_HEALTH && entity instanceof LivingEntity living) {
+            return living.getHealth();
+        }
+        return distanceSq;
     }
 
     private static Vec3 hitboxCenter(Entity entity) {
@@ -117,6 +205,7 @@ public final class CombatAutomation {
 
     public static void setAuraEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(AURA_ENABLED_KEY, enabled);
+        clearLockedTarget();
     }
 
     public static double auraRange() {
@@ -156,7 +245,60 @@ public final class CombatAutomation {
         AlmatyConfig.setBoolean(AURA_MOBS_KEY, enabled);
     }
 
+    public static boolean auraJumpOnly() {
+        return AlmatyConfig.getBoolean(AURA_JUMP_ONLY_KEY, true);
+    }
+
+    public static void setAuraJumpOnly(boolean enabled) {
+        AlmatyConfig.setBoolean(AURA_JUMP_ONLY_KEY, enabled);
+    }
+
+    public static int auraMoveMode() {
+        int mode = AlmatyConfig.getInt(AURA_MOVE_MODE_KEY, MOVE_HOLD_POSITION);
+        return mode == MOVE_LEAP_IN ? MOVE_LEAP_IN : MOVE_HOLD_POSITION;
+    }
+
+    public static void cycleAuraMoveMode() {
+        AlmatyConfig.setInt(AURA_MOVE_MODE_KEY, auraMoveMode() == MOVE_HOLD_POSITION ? MOVE_LEAP_IN : MOVE_HOLD_POSITION);
+    }
+
+    public static String auraMoveModeText() {
+        return auraMoveMode() == MOVE_LEAP_IN ? "Leap In" : "Hold Position";
+    }
+
+    public static int auraTargetMode() {
+        int mode = AlmatyConfig.getInt(AURA_TARGET_MODE_KEY, TARGET_NEAREST);
+        return mode == TARGET_LOWEST_HEALTH ? TARGET_LOWEST_HEALTH : TARGET_NEAREST;
+    }
+
+    public static void cycleAuraTargetMode() {
+        AlmatyConfig.setInt(AURA_TARGET_MODE_KEY, auraTargetMode() == TARGET_NEAREST ? TARGET_LOWEST_HEALTH : TARGET_NEAREST);
+    }
+
+    public static String auraTargetModeText() {
+        return auraTargetMode() == TARGET_LOWEST_HEALTH ? "Lowest Health" : "Nearest";
+    }
+
     private static int clampRangeTenths(int value) {
         return Math.max(MIN_RANGE_TENTHS, Math.min(MAX_RANGE_TENTHS, value));
+    }
+
+    private static void clearLockedTarget() {
+        lockedTargetId = -1;
+    }
+
+    private static float wrapDegrees(float value) {
+        value %= 360.0F;
+        if (value >= 180.0F) {
+            value -= 360.0F;
+        }
+        if (value < -180.0F) {
+            value += 360.0F;
+        }
+        return value;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
