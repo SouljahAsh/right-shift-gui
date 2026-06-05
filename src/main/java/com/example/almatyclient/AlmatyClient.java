@@ -247,11 +247,15 @@ public final class AlmatyClient implements ClientModInitializer {
     }
 
     private static boolean isEspLabelTarget(Entity entity) {
-        return entity instanceof LivingEntity && isEspTarget(entity) && !(entity instanceof ItemEntity);
+        if (entity instanceof ItemEntity) {
+            return espItems();
+        }
+        return entity instanceof LivingEntity && isEspTarget(entity);
     }
 
     private static void tickEspLabels(Minecraft client) {
-        if (client.level == null || client.player == null || !isEspEnabled() || (!espName() && !espHealth())) {
+        boolean canRenderLabels = espName() || espHealth() || espItems();
+        if (client.level == null || client.player == null || !isEspEnabled() || !canRenderLabels) {
             clearEspLabels(client);
             return;
         }
@@ -262,8 +266,7 @@ public final class AlmatyClient implements ClientModInitializer {
                 continue;
             }
 
-            LivingEntity living = (LivingEntity) entity;
-            String label = entityLabel(entity, living);
+            String label = entityLabel(entity);
             active.add(entity.getId());
             applyEspLabel(entity, label);
         }
@@ -380,7 +383,15 @@ public final class AlmatyClient implements ClientModInitializer {
                 .setLineWidth(width);
     }
 
-    private static String entityLabel(Entity entity, LivingEntity living) {
+    private static String entityLabel(Entity entity) {
+        if (entity instanceof ItemEntity itemEntity) {
+            return itemLabel(itemEntity);
+        }
+
+        if (!(entity instanceof LivingEntity living)) {
+            return baseDisplayName(entity);
+        }
+
         StringBuilder text = new StringBuilder();
         if (espName()) {
             text.append(baseDisplayName(entity));
@@ -392,6 +403,15 @@ public final class AlmatyClient implements ClientModInitializer {
             text.append("HP: ").append(Math.round(living.getHealth()));
         }
         return text.toString();
+    }
+
+    private static String itemLabel(ItemEntity itemEntity) {
+        String name = itemEntity.getItem().getHoverName().getString();
+        int count = itemEntity.getItem().getCount();
+        if (count > 1) {
+            return name + " x" + count;
+        }
+        return name;
     }
 
     private static String baseDisplayName(Entity entity) {

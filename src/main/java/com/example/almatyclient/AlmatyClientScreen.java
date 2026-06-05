@@ -5,12 +5,11 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
-import org.lwjgl.glfw.GLFW;
 
 public final class AlmatyClientScreen extends Screen {
-    private static final int MIN_PANEL_WIDTH = 390;
-    private static final int MIN_PANEL_HEIGHT = 250;
-    private static final int RESIZE_HANDLE = 7;
+    private static final int MIN_PANEL_WIDTH = 720;
+    private static final int MIN_PANEL_HEIGHT = 420;
+    private static final int RESIZE_HANDLE = 8;
     private static final int RESIZE_LEFT = 1;
     private static final int RESIZE_RIGHT = 2;
     private static final int RESIZE_TOP = 4;
@@ -23,23 +22,19 @@ public final class AlmatyClientScreen extends Screen {
     private boolean layoutInitialized;
     private boolean dragging;
     private boolean closing;
-    private boolean targetDropdownOpen = true;
-    private boolean displayDropdownOpen = true;
-    private boolean particlesSettingsOpen;
-    private boolean espSettingsOpen;
     private int activeSlider = -1;
     private int resizeMode;
     private int panelX;
     private int panelY;
-    private int panelWidth = 430;
-    private int panelHeight = 270;
+    private int panelWidth = 860;
+    private int panelHeight = 500;
     private int resizeStartPanelX;
     private int resizeStartPanelY;
     private int resizeStartPanelWidth;
     private int resizeStartPanelHeight;
+    private int maxScroll;
     private long closingAt;
-    private double lastMouseX;
-    private double lastMouseY;
+    private double contentScroll;
     private double resizeStartMouseX;
     private double resizeStartMouseY;
     private double dragOffsetX;
@@ -62,33 +57,34 @@ public final class AlmatyClientScreen extends Screen {
             this.layoutInitialized = true;
         }
         clampPanelToScreen();
+        clampScroll();
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-        graphics.fill(0, 0, this.width, this.height, 0xA5000000);
-
         float progress = openProgress();
-        int animatedY = this.panelY + Math.round((1.0F - progress) * 10.0F);
-        int animatedHeight = Math.max(1, Math.round(this.panelHeight * progress));
+        int backgroundAlpha = Math.round(165.0F * progress);
+        graphics.fill(0, 0, this.width, this.height, colorWithAlpha(backgroundAlpha, 0, 0, 0));
+
+        int animatedY = this.panelY + Math.round((1.0F - progress) * 18.0F);
+        int animatedHeight = this.panelHeight;
 
         drawShell(graphics, animatedY, animatedHeight);
-        drawHeader(graphics, animatedY);
-        drawTabs(graphics, animatedY);
-        drawContent(graphics, animatedY);
-        drawResizeHandles(graphics, animatedY);
+        if (progress > 0.04F) {
+            drawSidebar(graphics, animatedY);
+            drawTopBar(graphics, animatedY);
+            drawContent(graphics, animatedY);
+            drawResizeHandles(graphics, animatedY);
+        }
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mouseX = event.x();
         double mouseY = event.y();
-        int button = event.button();
 
         this.resizeMode = findResizeMode(mouseX, mouseY);
         if (this.resizeMode != 0) {
-            this.lastMouseX = mouseX;
-            this.lastMouseY = mouseY;
             this.resizeStartMouseX = mouseX;
             this.resizeStartMouseY = mouseY;
             this.resizeStartPanelX = this.panelX;
@@ -106,8 +102,7 @@ public final class AlmatyClientScreen extends Screen {
         Tab clickedTab = tabAt(mouseX, mouseY);
         if (clickedTab != null) {
             this.activeTab = clickedTab;
-            this.particlesSettingsOpen = false;
-            this.espSettingsOpen = false;
+            this.contentScroll = 0;
             saveSelectedTab();
             return true;
         }
@@ -119,39 +114,7 @@ public final class AlmatyClientScreen extends Screen {
             return true;
         }
 
-        if (this.activeTab == Tab.MOVEMENT && inRow(mouseX, mouseY, 0)) {
-            AlmatyClient.toggleAutoSprint();
-            return true;
-        }
-
-        if (this.activeTab == Tab.OTHER && inRow(mouseX, mouseY, 3)) {
-            resetPanel();
-            return true;
-        }
-
-        if (this.activeTab == Tab.VISUALS && inRow(mouseX, mouseY, 0)) {
-            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-                this.particlesSettingsOpen = !this.particlesSettingsOpen;
-            } else {
-                AlmatyClient.setParticlesEnabled(!AlmatyClient.isParticlesEnabled());
-            }
-            return true;
-        }
-
-        if (this.activeTab == Tab.PLAYERS && inRow(mouseX, mouseY, 0)) {
-            if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-                this.espSettingsOpen = !this.espSettingsOpen;
-            } else {
-                AlmatyClient.setEspEnabled(!AlmatyClient.isEspEnabled());
-            }
-            return true;
-        }
-
-        if (this.particlesSettingsOpen && clickParticlesSettings(mouseX, mouseY)) {
-            return true;
-        }
-
-        if (this.espSettingsOpen && clickEspSettings(mouseX, mouseY)) {
+        if (clickActiveContent(mouseX, mouseY)) {
             return true;
         }
 
@@ -174,8 +137,6 @@ public final class AlmatyClientScreen extends Screen {
 
         if (this.resizeMode != 0) {
             resizePanel(event.x(), event.y());
-            this.lastMouseX = event.x();
-            this.lastMouseY = event.y();
             return true;
         }
 
@@ -203,6 +164,17 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (!inside(mouseX, mouseY, contentViewportX(), contentViewportY(), contentViewportWidth(), contentViewportHeight())) {
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
+
+        this.contentScroll -= scrollY * 28.0D;
+        clampScroll();
+        return true;
+    }
+
+    @Override
     public void tick() {
         if (this.closing && Util.getMillis() - this.closingAt >= 150L && this.minecraft != null) {
             this.minecraft.setScreen(this.parent);
@@ -220,211 +192,324 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private void drawShell(GuiGraphics graphics, int y, int animatedHeight) {
-        int accent = AlmatyClient.accentColor(255);
-        int background = colorWithAlpha(226, Math.max(6, AlmatyClient.guiRed() / 8), Math.max(9, AlmatyClient.guiGreen() / 8), Math.max(14, AlmatyClient.guiBlue() / 8));
-
-        graphics.fill(this.panelX + 5, y + 6, this.panelX + this.panelWidth + 5, y + animatedHeight + 6, 0x66000000);
-        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, y + animatedHeight, background);
-        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, y + 2, accent);
-        graphics.fill(this.panelX, y + animatedHeight - 2, this.panelX + this.panelWidth, y + animatedHeight, accent);
-        graphics.fill(this.panelX, y, this.panelX + 2, y + animatedHeight, accent);
-        graphics.fill(this.panelX + this.panelWidth - 2, y, this.panelX + this.panelWidth, y + animatedHeight, accent);
+        int bottom = y + animatedHeight;
+        graphics.fill(this.panelX + 6, y + 8, this.panelX + this.panelWidth + 6, bottom + 8, 0x77000000);
+        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, bottom, 0xEA080D17);
+        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, y + 1, 0xFF20283A);
+        graphics.fill(this.panelX, bottom - 1, this.panelX + this.panelWidth, bottom, 0xFF171D2B);
+        graphics.fill(this.panelX, y, this.panelX + 1, bottom, 0xFF20283A);
+        graphics.fill(this.panelX + this.panelWidth - 1, y, this.panelX + this.panelWidth, bottom, 0xFF20283A);
     }
 
-    private void drawHeader(GuiGraphics graphics, int y) {
-        int accent = AlmatyClient.accentColor(255);
-        graphics.fill(this.panelX + 2, y + 2, this.panelX + this.panelWidth - 2, y + 34, 0x66000000);
-        drawStringFit(graphics, "AlmatyClient", this.panelX + 14, y + 13, Math.max(40, this.panelWidth - 56), 0xFFFFFFFF);
-        graphics.fill(this.panelX + 92, y + 15, this.panelX + 132, y + 17, accent);
-        graphics.fill(this.panelX + this.panelWidth - 28, y + 8, this.panelX + this.panelWidth - 10, y + 26, 0x66111824);
-        graphics.drawCenteredString(this.font, "X", this.panelX + this.panelWidth - 19, y + 13, 0xFFFFFFFF);
-    }
-
-    private void drawTabs(GuiGraphics graphics, int y) {
+    private void drawSidebar(GuiGraphics graphics, int y) {
         int sidebar = sidebarWidth();
-        graphics.fill(this.panelX + 10, y + 44, this.panelX + sidebar - 10, y + this.panelHeight - 14, 0x55111824);
+        int accent = AlmatyClient.accentColor(255);
+        graphics.fill(this.panelX, y, this.panelX + sidebar, y + this.panelHeight, 0x77050A12);
+        graphics.fill(this.panelX + sidebar, y + 1, this.panelX + sidebar + 1, y + this.panelHeight - 1, 0xFF171D2B);
 
+        graphics.drawString(this.font, "A", this.panelX + 24, y + 25, accent, false);
+        drawStringFit(graphics, "AlmatyClient", this.panelX + 42, y + 25, sidebar - 58, 0xFFFFFFFF);
+
+        int tabY = y + 74;
         for (Tab tab : Tab.values()) {
-            int itemY = tabY(tab);
             boolean active = tab == this.activeTab;
-            if (tab == Tab.OTHER) {
-                graphics.fill(this.panelX + 20, itemY - 12, this.panelX + sidebar - 20, itemY - 11, 0x66465466);
-            }
+            int rowY = tabY + tab.ordinal() * 48;
+            int rowX = this.panelX + 14;
+            int rowW = sidebar - 28;
             if (active) {
-                graphics.fill(this.panelX + 16, itemY, this.panelX + sidebar - 16, itemY + 23, AlmatyClient.accentColor(180));
-                graphics.fill(this.panelX + 16, itemY + 21, this.panelX + sidebar - 16, itemY + 23, AlmatyClient.accentColor(255));
+                graphics.fill(rowX, rowY, rowX + rowW, rowY + 36, AlmatyClient.accentColor(135));
+                graphics.fill(rowX, rowY, rowX + 3, rowY + 36, accent);
+                graphics.fill(rowX + rowW - 1, rowY, rowX + rowW, rowY + 36, 0x663E74FF);
             }
-            drawStringFit(graphics, tab.title, this.panelX + 26, itemY + 8, sidebar - 48, active ? 0xFFFFFFFF : 0xFFB9C4D8);
+            drawStringFit(graphics, tab.icon, rowX + 14, rowY + 11, 16, active ? 0xFFFFFFFF : 0xFF758099);
+            drawStringFit(graphics, tab.title, rowX + 38, rowY + 11, rowW - 48, active ? 0xFFFFFFFF : 0xFFADB4C8);
         }
+
+        int cardY = y + this.panelHeight - 86;
+        graphics.fill(this.panelX + 14, cardY, this.panelX + sidebar - 14, cardY + 54, 0x77101828);
+        drawStringFit(graphics, "v1.0.0", this.panelX + 26, cardY + 13, sidebar - 52, 0xFF8F98B1);
+        drawStringFit(graphics, "Release", this.panelX + 26, cardY + 30, sidebar - 52, accent);
+    }
+
+    private void drawTopBar(GuiGraphics graphics, int y) {
+        int sidebar = sidebarWidth();
+        int x = this.panelX + sidebar + 18;
+        int top = y + 18;
+        int right = this.panelX + this.panelWidth - 18;
+
+        graphics.fill(x, top, x + 230, top + 32, 0x66101828);
+        graphics.fill(x, top, x + 230, top + 1, 0xFF20283A);
+        drawStringFit(graphics, "Search modules...", x + 34, top + 10, 150, 0xFF9BA3B7);
+        graphics.drawString(this.font, "/", x + 205, top + 10, 0xFF9BA3B7, false);
+
+        int closeX = right - 26;
+        int minX = closeX - 36;
+        int gearX = minX - 40;
+        graphics.fill(gearX, top, gearX + 32, top + 32, 0x66101828);
+        graphics.drawCenteredString(this.font, "*", gearX + 16, top + 10, AlmatyClient.accentColor(255));
+        graphics.drawCenteredString(this.font, "-", minX + 16, top + 10, 0xFFB8C0D4);
+        graphics.drawCenteredString(this.font, "X", closeX + 13, top + 10, 0xFFB8C0D4);
     }
 
     private void drawContent(GuiGraphics graphics, int y) {
-        int x = contentX();
-        int w = contentWidth();
-        graphics.fill(x, y + 44, x + w, y + this.panelHeight - 14, 0x55111824);
-        graphics.enableScissor(x, y + 44, x + w, y + this.panelHeight - 14);
+        this.maxScroll = Math.max(0, contentHeight() - contentViewportHeight());
+        clampScroll();
 
-        drawStringFit(graphics, this.activeTab.title, x + 14, y + 56, w - 28, 0xFFFFFFFF);
+        int viewportX = contentViewportX();
+        int viewportY = y + 76;
+        int viewportW = contentViewportWidth();
+        int viewportH = contentViewportHeight();
+        int listX = moduleListX();
+        int listW = moduleListWidth();
+        int detailX = detailX();
+        int detailW = detailWidth();
+        int scroll = (int) Math.round(this.contentScroll);
+
+        graphics.enableScissor(viewportX, viewportY, viewportX + viewportW, viewportY + viewportH);
+
+        drawSectionHeader(graphics, listX, viewportY - scroll, listW, this.activeTab.title, this.activeTab.subtitle);
+        drawModuleList(graphics, listX, viewportY + 58 - scroll, listW);
+        drawDetailPanel(graphics, detailX, viewportY - scroll, detailW);
+
+        graphics.disableScissor();
+        drawScrollBar(graphics, viewportX + viewportW - 5, viewportY, viewportH);
+    }
+
+    private void drawSectionHeader(GuiGraphics graphics, int x, int y, int w, String title, String subtitle) {
+        graphics.fill(x, y, x + w, y + 48, 0x44101828);
+        drawStringFit(graphics, title, x + 14, y + 10, w - 28, 0xFFFFFFFF);
+        drawStringFit(graphics, subtitle, x + 14, y + 27, w - 28, 0xFF9BA3B7);
+    }
+
+    private void drawModuleList(GuiGraphics graphics, int x, int y, int w) {
+        if (this.activeTab == Tab.MOVEMENT) {
+            drawModuleCard(graphics, x, y, w, "Sprint", "Automatically sprints when moving forward.", AlmatyClient.isAutoSprintEnabled(), true);
+        } else if (this.activeTab == Tab.VISUALS) {
+            drawModuleCard(graphics, x, y, w, "Particles", "Water bubbles when hitting entities.", AlmatyClient.isParticlesEnabled(), true);
+        } else if (this.activeTab == Tab.PLAYERS) {
+            drawModuleCard(graphics, x, y, w, "ESP", "Boxes and labels for selected entities.", AlmatyClient.isEspEnabled(), true);
+        } else if (this.activeTab == Tab.OTHER) {
+            drawModuleCard(graphics, x, y, w, "Colors", "Adjust the client accent color.", true, true);
+            drawModuleCard(graphics, x, y + 86, w, "Reset GUI", "Restore window size and position.", false, false);
+        }
+    }
+
+    private void drawModuleCard(GuiGraphics graphics, int x, int y, int w, String title, String subtitle, boolean enabled, boolean active) {
+        int border = active ? AlmatyClient.accentColor(230) : 0xFF20283A;
+        graphics.fill(x, y, x + w, y + 70, active ? 0x77101828 : 0x55101828);
+        graphics.fill(x, y, x + w, y + 1, border);
+        graphics.fill(x, y + 69, x + w, y + 70, 0xFF171D2B);
+        graphics.fill(x, y, x + 1, y + 70, border);
+        graphics.fill(x + w - 1, y, x + w, y + 70, 0xFF171D2B);
+        graphics.fill(x + 16, y + 17, x + 48, y + 49, active ? AlmatyClient.accentColor(115) : 0xFF151B2A);
+        drawStringFit(graphics, title, x + 62, y + 16, w - 122, 0xFFFFFFFF);
+        drawStringFit(graphics, subtitle, x + 62, y + 33, w - 122, 0xFF9BA3B7);
+        drawToggle(graphics, x + w - 52, y + 24, enabled);
+    }
+
+    private void drawDetailPanel(GuiGraphics graphics, int x, int y, int w) {
+        graphics.fill(x, y, x + w, y + detailHeight(), 0x66101828);
+        graphics.fill(x, y, x + w, y + 1, 0xFF20283A);
+        graphics.fill(x, y, x + 1, y + detailHeight(), 0xFF20283A);
+        graphics.fill(x + w - 1, y, x + w, y + detailHeight(), 0xFF20283A);
 
         if (this.activeTab == Tab.MOVEMENT) {
-            drawFeatureRow(graphics, x + 12, y + 82, w - 24, "AutoSprint", AlmatyClient.isAutoSprintEnabled());
-        } else if (this.activeTab == Tab.OTHER) {
-            drawColorSlider(graphics, x + 12, y + 82, w - 24, "Red", AlmatyClient.guiRed(), 0);
-            drawColorSlider(graphics, x + 12, y + 120, w - 24, "Green", AlmatyClient.guiGreen(), 1);
-            drawColorSlider(graphics, x + 12, y + 158, w - 24, "Blue", AlmatyClient.guiBlue(), 2);
-            drawActionRow(graphics, x + 12, y + 198, w - 24, "Reset GUI", "Restore window size");
+            drawDetailHeader(graphics, x, y, w, "Sprint", AlmatyClient.isAutoSprintEnabled());
+            drawSettingRow(graphics, x, y + 98, w, "Mode", "Vanilla key-hold sprint.", "Vanilla");
+            drawSettingToggle(graphics, x, y + 154, w, "Stop On Collision", "Releases sprint when colliding.", true);
+            drawSettingRow(graphics, x, y + 210, w, "Start Delay", "Minimal delay before sprinting.", "1 tick");
         } else if (this.activeTab == Tab.VISUALS) {
-            drawFeatureRow(graphics, x + 12, y + 82, w - 24, "Particles", AlmatyClient.isParticlesEnabled());
-            if (this.particlesSettingsOpen) {
-                drawParticlesSettings(graphics, x + 22, y + 124, w - 44);
-            }
+            drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
+            drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
         } else if (this.activeTab == Tab.PLAYERS) {
-            drawFeatureRow(graphics, x + 12, y + 82, w - 24, "ESP", AlmatyClient.isEspEnabled());
-            if (this.espSettingsOpen) {
-                drawEspSettings(graphics, x + 22, y + 124, w - 44);
-            }
+            drawDetailHeader(graphics, x, y, w, "ESP", AlmatyClient.isEspEnabled());
+            drawCheckRow(graphics, x, y + 98, w, "Players", AlmatyClient.espPlayers());
+            drawCheckRow(graphics, x, y + 138, w, "Mobs", AlmatyClient.espMobs());
+            drawCheckRow(graphics, x, y + 178, w, "Items", AlmatyClient.espItems());
+            drawCheckRow(graphics, x, y + 238, w, "Name", AlmatyClient.espName());
+            drawCheckRow(graphics, x, y + 278, w, "Health", AlmatyClient.espHealth());
+        } else if (this.activeTab == Tab.OTHER) {
+            drawDetailHeader(graphics, x, y, w, "Color", true);
+            drawColorSlider(graphics, x + 22, y + 106, w - 44, "Red", AlmatyClient.guiRed(), 0);
+            drawColorSlider(graphics, x + 22, y + 160, w - 44, "Green", AlmatyClient.guiGreen(), 1);
+            drawColorSlider(graphics, x + 22, y + 214, w - 44, "Blue", AlmatyClient.guiBlue(), 2);
+            drawActionButton(graphics, x + 22, y + 280, w - 44, "Reset GUI");
         }
-        graphics.disableScissor();
     }
 
-    private void drawFeatureRow(GuiGraphics graphics, int x, int y, int w, String title, boolean enabled) {
-        graphics.fill(x, y, x + w, y + 34, enabled ? AlmatyClient.accentColor(95) : 0x66111824);
-        graphics.fill(x, y, x + 2, y + 34, enabled ? AlmatyClient.accentColor(255) : 0x66465466);
-        drawStringFit(graphics, title, x + 12, y + 7, Math.max(24, w - 66), 0xFFFFFFFF);
-        drawStringFit(graphics, "RMB settings", x + 12, y + 19, Math.max(24, w - 66), 0xFF98A8C4);
-        drawToggle(graphics, x + w - 42, y + 9, enabled);
+    private void drawDetailHeader(GuiGraphics graphics, int x, int y, int w, String title, boolean enabled) {
+        graphics.fill(x + 22, y + 24, x + 74, y + 76, AlmatyClient.accentColor(115));
+        drawStringFit(graphics, title, x + 92, y + 30, w - 180, 0xFFFFFFFF);
+        drawStatusPill(graphics, x + 92, y + 52, enabled);
+        drawToggle(graphics, x + w - 70, y + 38, enabled);
+        graphics.fill(x + 20, y + 90, x + w - 20, y + 91, 0xFF1B2233);
     }
 
-    private void drawActionRow(GuiGraphics graphics, int x, int y, int w, String title, String hint) {
-        graphics.fill(x, y, x + w, y + 34, 0x66111824);
-        graphics.fill(x, y, x + 2, y + 34, AlmatyClient.accentColor(210));
-        drawStringFit(graphics, title, x + 12, y + 7, Math.max(24, w - 24), 0xFFFFFFFF);
-        drawStringFit(graphics, hint, x + 12, y + 19, Math.max(24, w - 24), 0xFF98A8C4);
+    private void drawStatusPill(GuiGraphics graphics, int x, int y, boolean enabled) {
+        int w = enabled ? 56 : 64;
+        graphics.fill(x, y, x + w, y + 18, enabled ? 0x552EDBC3 : 0x552A3144);
+        drawStringFit(graphics, enabled ? "Enabled" : "Disabled", x + 8, y + 5, w - 16, enabled ? 0xFF36F0D4 : 0xFF9BA3B7);
+    }
+
+    private void drawSettingRow(GuiGraphics graphics, int x, int y, int w, String title, String hint, String value) {
+        graphics.fill(x + 20, y, x + w - 20, y + 48, 0x44101828);
+        drawStringFit(graphics, title, x + 34, y + 10, w - 180, 0xFFE7ECFF);
+        drawStringFit(graphics, hint, x + 34, y + 27, w - 180, 0xFF9BA3B7);
+        graphics.fill(x + w - 114, y + 12, x + w - 34, y + 36, 0x66151B2A);
+        drawStringFit(graphics, value, x + w - 96, y + 19, 58, 0xFFFFFFFF);
+    }
+
+    private void drawSettingToggle(GuiGraphics graphics, int x, int y, int w, String title, String hint, boolean enabled) {
+        graphics.fill(x + 20, y, x + w - 20, y + 48, 0x44101828);
+        drawStringFit(graphics, title, x + 34, y + 10, w - 130, 0xFFE7ECFF);
+        drawStringFit(graphics, hint, x + 34, y + 27, w - 130, 0xFF9BA3B7);
+        drawToggle(graphics, x + w - 70, y + 13, enabled);
+    }
+
+    private void drawCheckRow(GuiGraphics graphics, int x, int y, int w, String title, boolean enabled) {
+        graphics.fill(x + 20, y, x + w - 20, y + 34, 0x44101828);
+        graphics.fill(x + 34, y + 10, x + 46, y + 22, enabled ? AlmatyClient.accentColor(255) : 0xFF273142);
+        drawStringFit(graphics, title, x + 58, y + 10, w - 92, 0xFFE7ECFF);
+    }
+
+    private void drawActionButton(GuiGraphics graphics, int x, int y, int w, String title) {
+        graphics.fill(x, y, x + w, y + 34, AlmatyClient.accentColor(110));
+        graphics.fill(x, y, x + w, y + 1, AlmatyClient.accentColor(255));
+        graphics.drawCenteredString(this.font, title, x + w / 2, y + 12, 0xFFFFFFFF);
     }
 
     private void drawColorSlider(GuiGraphics graphics, int x, int y, int w, String label, int value, int index) {
-        graphics.fill(x, y, x + w, y + 30, 0x66111824);
-        drawStringFit(graphics, label, x + 10, y + 6, Math.max(24, w / 4), 0xFFFFFFFF);
-        drawStringFit(graphics, Integer.toString(value), x + w - 30, y + 6, 28, 0xFFBFD7FF);
-
-        int start = sliderStartX();
-        int end = sliderEndX();
-        int trackY = sliderY(index);
+        drawStringFit(graphics, label, x, y, Math.max(24, w / 4), 0xFFFFFFFF);
+        drawStringFit(graphics, Integer.toString(value), x + w - 34, y, 32, 0xFFBFD7FF);
+        int start = x;
+        int end = x + w;
+        int trackY = y + 24;
         int knob = start + Math.round((end - start) * (value / 255.0F));
-        graphics.fill(start, trackY, end, trackY + 3, 0xFF263447);
-        graphics.fill(start, trackY, knob, trackY + 3, AlmatyClient.accentColor(255));
-        graphics.fill(knob - 3, trackY - 4, knob + 3, trackY + 7, 0xFFFFFFFF);
-    }
-
-    private void drawParticlesSettings(GuiGraphics graphics, int x, int y, int w) {
-        graphics.fill(x, y, x + w, y + 42, 0x99111824);
-        graphics.fill(x, y, x + w, y + 1, AlmatyClient.accentColor(255));
-        drawStringFit(graphics, "Water Bubbles", x + 10, y + 9, Math.max(24, w - 62), 0xFFFFFFFF);
-        drawStringFit(graphics, "Hit player or mob", x + 10, y + 23, Math.max(24, w - 62), 0xFF9CB0CE);
-        drawToggle(graphics, x + w - 42, y + 12, AlmatyClient.isParticlesEnabled());
-    }
-
-    private void drawEspSettings(GuiGraphics graphics, int x, int y, int w) {
-        int currentY = y;
-        graphics.fill(x, currentY, x + w, currentY + 22, 0x99111824);
-        drawStringFit(graphics, "Выбор цели", x + 10, currentY + 7, Math.max(24, w - 34), 0xFFFFFFFF);
-        drawStringFit(graphics, this.targetDropdownOpen ? "-" : "+", x + w - 16, currentY + 7, 12, 0xFFFFFFFF);
-        currentY += 24;
-
-        if (this.targetDropdownOpen) {
-            drawCheck(graphics, x, currentY, w, "Игроки", AlmatyClient.espPlayers());
-            drawCheck(graphics, x, currentY + 22, w, "Мобы", AlmatyClient.espMobs());
-            drawCheck(graphics, x, currentY + 44, w, "Предметы", AlmatyClient.espItems());
-            currentY += 70;
-        }
-
-        graphics.fill(x, currentY, x + w, currentY + 22, 0x99111824);
-        drawStringFit(graphics, "Отображение", x + 10, currentY + 7, Math.max(24, w - 34), 0xFFFFFFFF);
-        drawStringFit(graphics, this.displayDropdownOpen ? "-" : "+", x + w - 16, currentY + 7, 12, 0xFFFFFFFF);
-        currentY += 24;
-
-        if (this.displayDropdownOpen) {
-            drawCheck(graphics, x, currentY, w, "Имя", AlmatyClient.espName());
-            drawCheck(graphics, x, currentY + 22, w, "Здоровье", AlmatyClient.espHealth());
-        }
-    }
-
-    private void drawCheck(GuiGraphics graphics, int x, int y, int w, String label, boolean enabled) {
-        graphics.fill(x + 8, y, x + w - 8, y + 20, 0x55111824);
-        graphics.fill(x + 16, y + 5, x + 26, y + 15, enabled ? AlmatyClient.accentColor(255) : 0xFF263447);
-        drawStringFit(graphics, label, x + 36, y + 6, Math.max(16, w - 52), 0xFFE6ECF8);
+        graphics.fill(start, trackY, end, trackY + 4, 0xFF222938);
+        graphics.fill(start, trackY, knob, trackY + 4, AlmatyClient.accentColor(255));
+        graphics.fill(knob - 4, trackY - 5, knob + 4, trackY + 9, 0xFFFFFFFF);
     }
 
     private void drawToggle(GuiGraphics graphics, int x, int y, boolean enabled) {
-        graphics.fill(x, y, x + 30, y + 16, enabled ? AlmatyClient.accentColor(255) : 0xFF273142);
-        graphics.fill(x + (enabled ? 17 : 3), y + 3, x + (enabled ? 27 : 13), y + 13, 0xFFFFFFFF);
+        graphics.fill(x, y, x + 42, y + 22, enabled ? AlmatyClient.accentColor(255) : 0xFF273142);
+        graphics.fill(x + (enabled ? 23 : 4), y + 4, x + (enabled ? 38 : 19), y + 19, 0xFFE9EEFF);
+    }
+
+    private void drawScrollBar(GuiGraphics graphics, int x, int y, int h) {
+        if (this.maxScroll <= 0) {
+            return;
+        }
+
+        graphics.fill(x, y, x + 3, y + h, 0x55222938);
+        int thumbH = Math.max(24, h * h / Math.max(h + this.maxScroll, 1));
+        int thumbY = y + (int) Math.round((h - thumbH) * (this.contentScroll / Math.max(1, this.maxScroll)));
+        graphics.fill(x, thumbY, x + 3, thumbY + thumbH, AlmatyClient.accentColor(220));
     }
 
     private void drawResizeHandles(GuiGraphics graphics, int y) {
         int right = this.panelX + this.panelWidth;
         int bottom = y + this.panelHeight;
-        graphics.fill(right - 16, bottom - 4, right - 4, bottom - 2, 0xFFFFFFFF);
-        graphics.fill(right - 12, bottom - 8, right - 4, bottom - 6, 0xFFFFFFFF);
-        graphics.fill(right - 8, bottom - 12, right - 4, bottom - 10, 0xFFFFFFFF);
+        graphics.fill(right - 18, bottom - 5, right - 4, bottom - 3, 0x99FFFFFF);
+        graphics.fill(right - 14, bottom - 10, right - 4, bottom - 8, 0x99FFFFFF);
+        graphics.fill(right - 9, bottom - 15, right - 4, bottom - 13, 0x99FFFFFF);
     }
 
-    private boolean clickParticlesSettings(double mouseX, double mouseY) {
-        int x = contentX() + 22;
-        int y = this.panelY + 164;
-        int w = contentWidth() - 44;
-        if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + 42) {
-            AlmatyClient.setParticlesEnabled(!AlmatyClient.isParticlesEnabled());
-            return true;
-        }
-        return false;
-    }
-
-    private boolean clickEspSettings(double mouseX, double mouseY) {
-        int x = contentX() + 22;
-        int y = this.panelY + 124;
-        int w = contentWidth() - 44;
-        int currentY = y;
-
-        if (inside(mouseX, mouseY, x, currentY, w, 22)) {
-            this.targetDropdownOpen = !this.targetDropdownOpen;
-            return true;
-        }
-        currentY += 24;
-
-        if (this.targetDropdownOpen) {
-            if (inside(mouseX, mouseY, x + 8, currentY, w - 16, 20)) {
-                AlmatyClient.setEspPlayers(!AlmatyClient.espPlayers());
-                return true;
-            }
-            if (inside(mouseX, mouseY, x + 8, currentY + 22, w - 16, 20)) {
-                AlmatyClient.setEspMobs(!AlmatyClient.espMobs());
-                return true;
-            }
-            if (inside(mouseX, mouseY, x + 8, currentY + 44, w - 16, 20)) {
-                AlmatyClient.setEspItems(!AlmatyClient.espItems());
-                return true;
-            }
-            currentY += 70;
+    private boolean clickActiveContent(double mouseX, double mouseY) {
+        if (!inside(mouseX, mouseY, contentViewportX(), contentViewportY(), contentViewportWidth(), contentViewportHeight())) {
+            return false;
         }
 
-        if (inside(mouseX, mouseY, x, currentY, w, 22)) {
-            this.displayDropdownOpen = !this.displayDropdownOpen;
-            return true;
-        }
-        currentY += 24;
-
-        if (this.displayDropdownOpen) {
-            if (inside(mouseX, mouseY, x + 8, currentY, w - 16, 20)) {
-                AlmatyClient.setEspName(!AlmatyClient.espName());
+        int y = (int) Math.round(mouseY + this.contentScroll);
+        if (this.activeTab == Tab.MOVEMENT) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90)) {
+                AlmatyClient.toggleAutoSprint();
                 return true;
             }
-            if (inside(mouseX, mouseY, x + 8, currentY + 22, w - 16, 20)) {
-                AlmatyClient.setEspHealth(!AlmatyClient.espHealth());
+        } else if (this.activeTab == Tab.VISUALS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 160)) {
+                AlmatyClient.setParticlesEnabled(!AlmatyClient.isParticlesEnabled());
+                return true;
+            }
+        } else if (this.activeTab == Tab.PLAYERS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90)) {
+                AlmatyClient.setEspEnabled(!AlmatyClient.isEspEnabled());
+                return true;
+            }
+            return clickEspDetail(mouseX, y);
+        } else if (this.activeTab == Tab.OTHER) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 144, moduleListWidth(), 70)
+                    || inside(mouseX, y, detailX() + 22, contentViewportY() + 280, detailWidth() - 44, 34)) {
+                resetPanel();
                 return true;
             }
         }
 
         return false;
+    }
+
+    private boolean clickEspDetail(double mouseX, int y) {
+        int x = detailX();
+        int w = detailWidth();
+        int base = contentViewportY();
+        if (inside(mouseX, y, x + 20, base + 98, w - 40, 34)) {
+            AlmatyClient.setEspPlayers(!AlmatyClient.espPlayers());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 138, w - 40, 34)) {
+            AlmatyClient.setEspMobs(!AlmatyClient.espMobs());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 178, w - 40, 34)) {
+            AlmatyClient.setEspItems(!AlmatyClient.espItems());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 238, w - 40, 34)) {
+            AlmatyClient.setEspName(!AlmatyClient.espName());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 278, w - 40, 34)) {
+            AlmatyClient.setEspHealth(!AlmatyClient.espHealth());
+            return true;
+        }
+        return false;
+    }
+
+    private int sliderAt(double mouseX, double mouseY) {
+        if (this.activeTab != Tab.OTHER || !inside(mouseX, mouseY, contentViewportX(), contentViewportY(), contentViewportWidth(), contentViewportHeight())) {
+            return -1;
+        }
+
+        int detailX = detailX();
+        int w = detailWidth();
+        int y = (int) Math.round(mouseY + this.contentScroll);
+        int[] ys = {contentViewportY() + 130, contentViewportY() + 184, contentViewportY() + 238};
+        for (int i = 0; i < ys.length; i++) {
+            if (inside(mouseX, y, detailX + 18, ys[i] - 10, w - 36, 24)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void updateColorSlider(int slider, double mouseX) {
+        int start = detailX() + 22;
+        int end = start + detailWidth() - 44;
+        int value = (int) Math.round((Math.max(start, Math.min(end, mouseX)) - start) * 255.0D / Math.max(1, end - start));
+        int red = AlmatyClient.guiRed();
+        int green = AlmatyClient.guiGreen();
+        int blue = AlmatyClient.guiBlue();
+
+        if (slider == 0) {
+            red = value;
+        } else if (slider == 1) {
+            green = value;
+        } else {
+            blue = value;
+        }
+        AlmatyClient.setGuiColor(red, green, blue);
     }
 
     private float openProgress() {
@@ -448,56 +533,15 @@ public final class AlmatyClientScreen extends Screen {
 
     private Tab tabAt(double mouseX, double mouseY) {
         int sidebar = sidebarWidth();
-        int x = this.panelX + 16;
-        int w = sidebar - 32;
+        int x = this.panelX + 14;
+        int w = sidebar - 28;
         for (Tab tab : Tab.values()) {
-            int y = tabY(tab);
-            if (inside(mouseX, mouseY, x, y, w, 23)) {
+            int y = this.panelY + 74 + tab.ordinal() * 48;
+            if (inside(mouseX, mouseY, x, y, w, 36)) {
                 return tab;
             }
         }
         return null;
-    }
-
-    private boolean inRow(double mouseX, double mouseY, int index) {
-        int x = contentX() + 12;
-        int y = this.panelY + 82 + index * 40;
-        int w = contentWidth() - 24;
-        return inside(mouseX, mouseY, x, y, w, 34);
-    }
-
-    private int sliderAt(double mouseX, double mouseY) {
-        if (this.activeTab != Tab.OTHER) {
-            return -1;
-        }
-
-        int start = sliderStartX();
-        int end = sliderEndX();
-        for (int i = 0; i < 3; i++) {
-            int y = sliderY(i);
-            if (mouseX >= start - 4 && mouseX <= end + 4 && mouseY >= y - 7 && mouseY <= y + 10) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private void updateColorSlider(int slider, double mouseX) {
-        int start = sliderStartX();
-        int end = sliderEndX();
-        int value = (int) Math.round((Math.max(start, Math.min(end, mouseX)) - start) * 255.0D / Math.max(1, end - start));
-        int red = AlmatyClient.guiRed();
-        int green = AlmatyClient.guiGreen();
-        int blue = AlmatyClient.guiBlue();
-
-        if (slider == 0) {
-            red = value;
-        } else if (slider == 1) {
-            green = value;
-        } else {
-            blue = value;
-        }
-        AlmatyClient.setGuiColor(red, green, blue);
     }
 
     private int findResizeMode(double mouseX, double mouseY) {
@@ -559,6 +603,7 @@ public final class AlmatyClientScreen extends Screen {
         this.panelWidth = width;
         this.panelHeight = height;
         clampPanelToScreen();
+        clampScroll();
     }
 
     private void clampPanelToScreen() {
@@ -566,6 +611,11 @@ public final class AlmatyClientScreen extends Screen {
         this.panelHeight = Math.min(Math.max(this.panelHeight, MIN_PANEL_HEIGHT), Math.max(MIN_PANEL_HEIGHT, this.height - 12));
         this.panelX = Math.max(6, Math.min(this.panelX, this.width - this.panelWidth - 6));
         this.panelY = Math.max(6, Math.min(this.panelY, this.height - this.panelHeight - 6));
+    }
+
+    private void clampScroll() {
+        this.maxScroll = Math.max(0, contentHeight() - contentViewportHeight());
+        this.contentScroll = Math.max(0.0D, Math.min(this.contentScroll, this.maxScroll));
     }
 
     private void savePanel() {
@@ -577,10 +627,11 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private void resetPanel() {
-        this.panelWidth = 430;
-        this.panelHeight = 270;
+        this.panelWidth = 860;
+        this.panelHeight = 500;
         this.panelX = this.width / 2 - this.panelWidth / 2;
         this.panelY = this.height / 2 - this.panelHeight / 2;
+        this.contentScroll = 0;
         clampPanelToScreen();
         savePanel();
     }
@@ -599,43 +650,61 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private boolean isInHeader(double mouseX, double mouseY) {
-        return inside(mouseX, mouseY, this.panelX + 2, this.panelY + 2, this.panelWidth - 4, 32);
+        return inside(mouseX, mouseY, this.panelX, this.panelY, this.panelWidth, 64);
     }
 
     private boolean isInClose(double mouseX, double mouseY) {
-        return inside(mouseX, mouseY, this.panelX + this.panelWidth - 28, this.panelY + 8, 18, 18);
+        return inside(mouseX, mouseY, this.panelX + this.panelWidth - 44, this.panelY + 18, 30, 32);
     }
 
     private int sidebarWidth() {
-        return Math.max(116, Math.min(150, this.panelWidth / 3));
+        return Math.max(150, Math.min(210, this.panelWidth / 4));
     }
 
-    private int contentX() {
-        return this.panelX + sidebarWidth() + 4;
+    private int moduleListX() {
+        return this.panelX + sidebarWidth() + 18;
     }
 
-    private int contentWidth() {
-        return this.panelX + this.panelWidth - contentX() - 10;
+    private int moduleListWidth() {
+        return Math.max(210, Math.min(290, (this.panelWidth - sidebarWidth() - 56) * 38 / 100));
     }
 
-    private int sliderStartX() {
-        return contentX() + 92;
+    private int detailX() {
+        return moduleListX() + moduleListWidth() + 16;
     }
 
-    private int sliderEndX() {
-        return contentX() + contentWidth() - 50;
+    private int detailWidth() {
+        return this.panelX + this.panelWidth - 20 - detailX();
     }
 
-    private int sliderY(int index) {
-        return this.panelY + 102 + index * 38;
+    private int contentViewportX() {
+        return moduleListX();
     }
 
-    private int tabY(Tab tab) {
-        if (tab == Tab.OTHER) {
-            return this.panelY + this.panelHeight - 47;
+    private int contentViewportY() {
+        return this.panelY + 76;
+    }
+
+    private int contentViewportWidth() {
+        return this.panelX + this.panelWidth - 20 - contentViewportX();
+    }
+
+    private int contentViewportHeight() {
+        return Math.max(120, this.panelHeight - 96);
+    }
+
+    private int contentHeight() {
+        return Math.max(360, detailHeight() + 16);
+    }
+
+    private int detailHeight() {
+        if (this.activeTab == Tab.PLAYERS) {
+            return 340;
         }
-
-        return this.panelY + 48 + tab.ordinal() * 31;
+        if (this.activeTab == Tab.OTHER) {
+            return 350;
+        }
+        return 280;
     }
 
     private void drawStringFit(GuiGraphics graphics, String text, int x, int y, int maxWidth, int color) {
@@ -669,15 +738,19 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private enum Tab {
-        MOVEMENT("Movement"),
-        VISUALS("Visuals"),
-        PLAYERS("Players"),
-        OTHER("Other");
+        MOVEMENT("Movement", "Improve your movement.", "M"),
+        VISUALS("Visuals", "Client-side effects.", "V"),
+        PLAYERS("Players", "Entity ESP controls.", "P"),
+        OTHER("Other", "Interface settings.", "O");
 
         private final String title;
+        private final String subtitle;
+        private final String icon;
 
-        Tab(String title) {
+        Tab(String title, String subtitle, String icon) {
             this.title = title;
+            this.subtitle = subtitle;
+            this.icon = icon;
         }
     }
 }
