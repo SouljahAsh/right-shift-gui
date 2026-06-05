@@ -1,24 +1,40 @@
 package com.example.almatyclient;
 
+import com.mojang.authlib.GameProfile;
 import net.minecraft.client.Minecraft;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Random;
 
 public final class AltManager {
+    private static final String NICKS_KEY = "alts.nicks";
+    private static final String SELECTED_KEY = "alts.selected";
     private static final Random RANDOM = new Random();
     private static final List<String> NICKS = new ArrayList<>();
     private static String selectedNick = "";
     private static boolean loaded;
 
     private AltManager() {
+    }
+
+    public static synchronized void load() {
+        if (loaded) {
+            return;
+        }
+
+        loaded = true;
+        NICKS.clear();
+        for (String nick : AlmatyConfig.getList(NICKS_KEY)) {
+            String cleaned = sanitizeNick(nick);
+            if (!cleaned.isEmpty() && NICKS.stream().noneMatch(existing -> existing.equalsIgnoreCase(cleaned))) {
+                NICKS.add(cleaned);
+            }
+        }
+        selectedNick = sanitizeNick(AlmatyConfig.getString(SELECTED_KEY, ""));
     }
 
     public static synchronized List<String> getNicks() {
@@ -32,9 +48,7 @@ public final class AltManager {
     }
 
     public static synchronized boolean saveNick(String rawNick) {
-        load();
-        String nick = sanitizeNick(rawNick);
-
+        String nick = applyNick(rawNick);
         if (nick.isEmpty()) {
             return false;
         }
@@ -42,26 +56,40 @@ public final class AltManager {
         if (NICKS.stream().noneMatch(existing -> existing.equalsIgnoreCase(nick))) {
             NICKS.add(nick);
         }
-
-        selectedNick = nick;
-        save();
+        persist();
         return true;
     }
 
-    public static synchronized void selectNick(String nick) {
+    public static synchronized String applyNick(String rawNick) {
         load();
-
-        for (String existing : NICKS) {
-            if (existing.equalsIgnoreCase(nick)) {
-                selectedNick = existing;
-                save();
-                return;
-            }
+        String nick = sanitizeNick(rawNick);
+        if (nick.isEmpty()) {
+            return "";
         }
+
+        selectedNick = nick;
+        AlmatyConfig.setString(SELECTED_KEY, selectedNick);
+        applyToMinecraftSession(nick);
+        return nick;
+    }
+
+    public static synchronized void selectNick(String nick) {
+        applyNick(nick);
+    }
+
+    public static synchronized void deleteNick(String rawNick) {
+        load();
+        String nick = sanitizeNick(rawNick);
+        NICKS.removeIf(existing -> existing.equalsIgnoreCase(nick));
+        if (selectedNick.equalsIgnoreCase(nick)) {
+            selectedNick = "";
+            AlmatyConfig.setString(SELECTED_KEY, "");
+        }
+        persist();
     }
 
     public static String randomNick() {
-        String[] prefixes = {"Almaty", "Shift", "Sprint", "Glide", "Nova", "Pixel", "Astra", "KZ"};
+        String[] prefixes = {"Almaty", "Blue", "Sprint", "Glide", "Nova", "Pixel", "Astra", "KZ"};
         String[] suffixes = {"Runner", "Client", "Wave", "Mode", "Rush", "Sky", "Tap", "Flow"};
         String prefix = prefixes[RANDOM.nextInt(prefixes.length)];
         String suffix = suffixes[RANDOM.nextInt(suffixes.length)];
@@ -82,59 +110,47 @@ public final class AltManager {
         return cleaned.length() >= 3 ? cleaned : "";
     }
 
-    private static void load() {
-        if (loaded) {
+    private static void persist() {
+        AlmatyConfig.setList(NICKS_KEY, NICKS);
+        AlmatyConfig.setString(SELECTED_KEY, selectedNick);
+    }
+
+    private static void applyToMinecraftSession(String nick) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null) {
             return;
         }
 
-        loaded = true;
-        Path path = configPath();
-
-        if (!Files.exists(path)) {
-            return;
+        Object user = client.getUser();
+        if (user != null) {
+            replaceStringFields(user, nick);
         }
 
-        try {
-            for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
-                if (line.startsWith("selected=")) {
-                    selectedNick = sanitizeNick(line.substring("selected=".length()));
+        if (client.player != null) {
+            GameProfile profile = client.player.getGameProfile();
+            replaceStringFields(profile, nick);
+        }
+    }
+
+    private static void replaceStringFields(Object target, String value) {
+        Class<?> type = target.getClass();
+        while (type != null) {
+            for (Field field : type.getDeclaredFields()) {
+                if (field.getType() != String.class || Modifier.isStatic(field.getModifiers())) {
                     continue;
                 }
 
-                String nick = sanitizeNick(line);
-                if (!nick.isEmpty() && NICKS.stream().noneMatch(existing -> existing.equalsIgnoreCase(nick))) {
-                    NICKS.add(nick);
+                try {
+                    field.setAccessible(true);
+                    String current = (String) field.get(target);
+                    String name = field.getName().toLowerCase();
+                    if (name.contains("name") || current == null || current.equals(getSelectedNick())) {
+                        field.set(target, value);
+                    }
+                } catch (IllegalAccessException | RuntimeException ignored) {
                 }
             }
-        } catch (IOException ignored) {
-            NICKS.clear();
-            selectedNick = "";
+            type = type.getSuperclass();
         }
-    }
-
-    private static void save() {
-        Path path = configPath();
-        List<String> lines = new ArrayList<>();
-
-        if (!selectedNick.isEmpty()) {
-            lines.add("selected=" + selectedNick);
-        }
-
-        lines.addAll(NICKS);
-
-        try {
-            Files.createDirectories(path.getParent());
-            Files.write(path, lines, StandardCharsets.UTF_8);
-        } catch (IOException ignored) {
-        }
-    }
-
-    private static Path configPath() {
-        return Minecraft.getInstance()
-                .gameDirectory
-                .toPath()
-                .resolve("config")
-                .resolve(AlmatyClient.MOD_ID.toLowerCase(Locale.ROOT))
-                .resolve("alts.txt");
     }
 }

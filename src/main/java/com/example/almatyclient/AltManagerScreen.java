@@ -1,7 +1,6 @@
 package com.example.almatyclient;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -13,20 +12,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class AltManagerScreen extends Screen {
-    private static final int PANEL_WIDTH = 340;
-    private static final int PANEL_HEIGHT = 220;
+    private static final int PANEL_WIDTH = 360;
+    private static final int PANEL_HEIGHT = 246;
     private static final int PAGE_SIZE = 5;
 
     private final Screen parent;
-    private final List<Button> nickButtons = new ArrayList<>();
-    private Tab tab = Tab.ADD;
+    private final List<Button> selectButtons = new ArrayList<>();
+    private final List<Button> deleteButtons = new ArrayList<>();
     private int page;
 
     private EditBox nickBox;
-    private Button addTabButton;
-    private Button savedTabButton;
-    private Button saveButton;
+    private Button applyButton;
     private Button randomButton;
+    private Button saveButton;
     private Button prevButton;
     private Button nextButton;
     private Button backButton;
@@ -38,110 +36,107 @@ public final class AltManagerScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelX = panelX();
-        int panelY = panelY();
-
-        this.addTabButton = this.addRenderableWidget(Button.builder(
-                Component.translatable("screen.almatyclient.alt_manager.tab.add"),
-                button -> setTab(Tab.ADD)
-        ).bounds(panelX + 18, panelY + 36, 146, 20).build());
-
-        this.savedTabButton = this.addRenderableWidget(Button.builder(
-                Component.translatable("screen.almatyclient.alt_manager.tab.saved"),
-                button -> setTab(Tab.SAVED)
-        ).bounds(panelX + 176, panelY + 36, 146, 20).build());
+        int x = panelX();
+        int y = panelY();
 
         this.nickBox = this.addRenderableWidget(new EditBox(
                 this.font,
-                panelX + 36,
-                panelY + 82,
-                268,
+                x + 26,
+                y + 52,
+                308,
                 20,
                 Component.translatable("screen.almatyclient.alt_manager.nick")
         ));
         this.nickBox.setMaxLength(16);
         this.nickBox.setHint(Component.translatable("screen.almatyclient.alt_manager.nick_hint"));
-        this.nickBox.setResponder(value -> updateSaveButton());
+        this.nickBox.setValue(AltManager.getSelectedNick());
+        this.nickBox.setResponder(value -> updateApplyButton());
 
-        this.saveButton = this.addRenderableWidget(Button.builder(
-                Component.translatable("screen.almatyclient.alt_manager.save"),
-                button -> saveNick()
-        ).bounds(panelX + 36, panelY + 112, 128, 20).build());
+        this.applyButton = this.addRenderableWidget(Button.builder(
+                Component.literal("Apply"),
+                button -> applyNick()
+        ).bounds(x + 26, y + 80, 96, 20).build());
 
         this.randomButton = this.addRenderableWidget(Button.builder(
-                Component.translatable("screen.almatyclient.alt_manager.random"),
+                Component.literal("Random"),
                 button -> {
                     this.nickBox.setValue(AltManager.randomNick());
-                    saveNick();
+                    applyNick();
                 }
-        ).bounds(panelX + 176, panelY + 112, 128, 20).build());
+        ).bounds(x + 132, y + 80, 96, 20).build());
+
+        this.saveButton = this.addRenderableWidget(Button.builder(
+                Component.literal("Save"),
+                button -> saveNick()
+        ).bounds(x + 238, y + 80, 96, 20).build());
 
         for (int i = 0; i < PAGE_SIZE; i++) {
-            Button button = this.addRenderableWidget(Button.builder(
-                    Component.empty(),
-                    pressed -> selectNick(pressed.getMessage().getString())
-            ).bounds(panelX + 36, panelY + 72 + i * 24, 268, 20).build());
-            this.nickButtons.add(button);
+            Button select = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
+                AltManager.selectNick(button.getMessage().getString());
+                this.nickBox.setValue(AltManager.getSelectedNick());
+                updateList();
+            }).bounds(x + 26, y + 126 + i * 23, 250, 20).build());
+
+            Button delete = this.addRenderableWidget(Button.builder(Component.literal("X"), button -> {
+                int index = this.deleteButtons.indexOf(button);
+                int nickIndex = this.page * PAGE_SIZE + index;
+                List<String> nicks = AltManager.getNicks();
+                if (nickIndex >= 0 && nickIndex < nicks.size()) {
+                    AltManager.deleteNick(nicks.get(nickIndex));
+                    this.page = Math.min(this.page, maxPage());
+                    updateList();
+                }
+            }).bounds(x + 284, y + 126 + i * 23, 50, 20).build());
+
+            this.selectButtons.add(select);
+            this.deleteButtons.add(delete);
         }
 
-        this.prevButton = this.addRenderableWidget(Button.builder(
-                Component.literal("<"),
-                button -> {
-                    if (this.page > 0) {
-                        this.page--;
-                        updateTabWidgets();
-                    }
-                }
-        ).bounds(panelX + 36, panelY + 196, 52, 20).build());
-
-        this.nextButton = this.addRenderableWidget(Button.builder(
-                Component.literal(">"),
-                button -> {
-                    int maxPage = maxPage();
-                    if (this.page < maxPage) {
-                        this.page++;
-                        updateTabWidgets();
-                    }
-                }
-        ).bounds(panelX + 252, panelY + 196, 52, 20).build());
+        this.prevButton = this.addRenderableWidget(Button.builder(Component.literal("<"), button -> {
+            if (this.page > 0) {
+                this.page--;
+                updateList();
+            }
+        }).bounds(x + 26, y + 220, 50, 20).build());
 
         this.backButton = this.addRenderableWidget(Button.builder(
                 Component.translatable("screen.almatyclient.alt_manager.back"),
                 button -> this.onClose()
-        ).bounds(panelX + 106, panelY + 196, 128, 20).build());
+        ).bounds(x + 100, y + 220, 160, 20).build());
 
-        updateTabWidgets();
-        updateSaveButton();
+        this.nextButton = this.addRenderableWidget(Button.builder(Component.literal(">"), button -> {
+            if (this.page < maxPage()) {
+                this.page++;
+                updateList();
+            }
+        }).bounds(x + 284, y + 220, 50, 20).build());
+
+        updateApplyButton();
+        updateList();
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
         graphics.fill(0, 0, this.width, this.height, 0x99000000);
 
-        int panelX = panelX();
-        int panelY = panelY();
+        int x = panelX();
+        int y = panelY();
+        layoutWidgets(x, y);
 
-        layoutWidgets(panelX, panelY);
+        int accent = AlmatyClient.accentColor(255);
+        graphics.fill(x + 5, y + 6, x + PANEL_WIDTH + 5, y + PANEL_HEIGHT + 6, 0x66000000);
+        graphics.fill(x, y, x + PANEL_WIDTH, y + PANEL_HEIGHT, 0xEA0A101A);
+        graphics.fill(x, y, x + PANEL_WIDTH, y + 2, accent);
+        graphics.fill(x, y + PANEL_HEIGHT - 2, x + PANEL_WIDTH, y + PANEL_HEIGHT, accent);
+        graphics.fill(x, y, x + 2, y + PANEL_HEIGHT, accent);
+        graphics.fill(x + PANEL_WIDTH - 2, y, x + PANEL_WIDTH, y + PANEL_HEIGHT, accent);
 
-        graphics.fill(panelX + 5, panelY + 6, panelX + PANEL_WIDTH + 5, panelY + PANEL_HEIGHT + 6, 0x66000000);
-        graphics.fill(panelX, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xEA101820);
-        graphics.fill(panelX, panelY, panelX + PANEL_WIDTH, panelY + 2, 0xFF4BA3FF);
-        graphics.fill(panelX, panelY + 2, panelX + PANEL_WIDTH, panelY + 4, 0xFF2DD4BF);
-        graphics.fill(panelX, panelY + PANEL_HEIGHT - 2, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xFF4BA3FF);
-        graphics.fill(panelX, panelY, panelX + 2, panelY + PANEL_HEIGHT, 0xFF4BA3FF);
-        graphics.fill(panelX + PANEL_WIDTH - 2, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xFF2DD4BF);
+        graphics.drawCenteredString(this.font, "Alt Manager", this.width / 2, y + 16, 0xFFFFFFFF);
+        graphics.drawString(this.font, selectedLabel(), x + 26, y + 34, 0xFFBFD7FF, false);
+        graphics.drawString(this.font, "Saved accounts", x + 26, y + 111, 0xFFFFFFFF, false);
 
-        graphics.drawCenteredString(this.font, this.title, this.width / 2, panelY + 16, 0xFFFFFFFF);
-        drawSelectedNick(graphics, panelY);
-
-        if (this.tab == Tab.SAVED && AltManager.getNicks().isEmpty()) {
-            graphics.drawCenteredString(
-                    this.font,
-                    Component.translatable("screen.almatyclient.alt_manager.empty"),
-                    this.width / 2,
-                    panelY + 104,
-                    0xFFBFD7FF
-            );
+        if (AltManager.getNicks().isEmpty()) {
+            graphics.drawCenteredString(this.font, "Empty", this.width / 2, y + 158, 0xFF8CA3C7);
         }
 
         super.render(graphics, mouseX, mouseY, delta);
@@ -149,8 +144,8 @@ public final class AltManagerScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_ENTER && this.tab == Tab.ADD) {
-            saveNick();
+        if (event.key() == GLFW.GLFW_KEY_ENTER) {
+            applyNick();
             return true;
         }
 
@@ -164,112 +159,90 @@ public final class AltManagerScreen extends Screen {
         }
     }
 
-    private void setTab(Tab tab) {
-        this.tab = tab;
-        this.page = Math.min(this.page, maxPage());
-        updateTabWidgets();
+    private void applyNick() {
+        String nick = AltManager.applyNick(this.nickBox.getValue());
+        if (!nick.isEmpty()) {
+            this.nickBox.setValue(nick);
+            updateList();
+        }
     }
 
     private void saveNick() {
         if (AltManager.saveNick(this.nickBox.getValue())) {
-            this.nickBox.setValue(AltManager.getSelectedNick());
-            this.tab = Tab.SAVED;
             this.page = maxPage();
-            updateTabWidgets();
+            updateList();
         }
     }
 
-    private void selectNick(String nick) {
-        AltManager.selectNick(nick);
-        this.nickBox.setValue(AltManager.getSelectedNick());
-        updateTabWidgets();
-    }
-
-    private void updateSaveButton() {
+    private void updateApplyButton() {
+        boolean valid = this.nickBox != null && !AltManager.sanitizeNick(this.nickBox.getValue()).isEmpty();
+        if (this.applyButton != null) {
+            this.applyButton.active = valid;
+        }
         if (this.saveButton != null) {
-            this.saveButton.active = !AltManager.sanitizeNick(this.nickBox.getValue()).isEmpty();
+            this.saveButton.active = valid;
         }
     }
 
-    private void updateTabWidgets() {
-        boolean addVisible = this.tab == Tab.ADD;
-        boolean savedVisible = this.tab == Tab.SAVED;
-
-        setVisible(this.nickBox, addVisible);
-        setVisible(this.saveButton, addVisible);
-        setVisible(this.randomButton, addVisible);
-
+    private void updateList() {
         List<String> nicks = AltManager.getNicks();
         int start = this.page * PAGE_SIZE;
 
-        for (int i = 0; i < this.nickButtons.size(); i++) {
-            Button button = this.nickButtons.get(i);
-            int nickIndex = start + i;
-            boolean visible = savedVisible && nickIndex < nicks.size();
+        for (int i = 0; i < this.selectButtons.size(); i++) {
+            int index = start + i;
+            boolean visible = index < nicks.size();
+            Button select = this.selectButtons.get(i);
+            Button delete = this.deleteButtons.get(i);
 
-            setVisible(button, visible);
+            select.visible = visible;
+            select.active = visible;
+            delete.visible = visible;
+            delete.active = visible;
 
             if (visible) {
-                button.setMessage(Component.literal(nicks.get(nickIndex)));
+                select.setMessage(Component.literal(nicks.get(index)));
             }
-        }
-
-        setVisible(this.prevButton, savedVisible);
-        setVisible(this.nextButton, savedVisible);
-
-        if (this.addTabButton != null) {
-            this.addTabButton.active = this.tab != Tab.ADD;
-        }
-
-        if (this.savedTabButton != null) {
-            this.savedTabButton.active = this.tab != Tab.SAVED;
         }
 
         if (this.prevButton != null) {
             this.prevButton.active = this.page > 0;
         }
-
         if (this.nextButton != null) {
             this.nextButton.active = this.page < maxPage();
         }
-
-        updateSaveButton();
+        updateApplyButton();
     }
 
-    private void layoutWidgets(int panelX, int panelY) {
-        this.addTabButton.setX(panelX + 18);
-        this.addTabButton.setY(panelY + 36);
-        this.savedTabButton.setX(panelX + 176);
-        this.savedTabButton.setY(panelY + 36);
+    private void layoutWidgets(int x, int y) {
+        this.nickBox.setX(x + 26);
+        this.nickBox.setY(y + 52);
+        this.applyButton.setX(x + 26);
+        this.applyButton.setY(y + 80);
+        this.randomButton.setX(x + 132);
+        this.randomButton.setY(y + 80);
+        this.saveButton.setX(x + 238);
+        this.saveButton.setY(y + 80);
 
-        this.nickBox.setX(panelX + 36);
-        this.nickBox.setY(panelY + 82);
-        this.saveButton.setX(panelX + 36);
-        this.saveButton.setY(panelY + 112);
-        this.randomButton.setX(panelX + 176);
-        this.randomButton.setY(panelY + 112);
-
-        for (int i = 0; i < this.nickButtons.size(); i++) {
-            Button button = this.nickButtons.get(i);
-            button.setX(panelX + 36);
-            button.setY(panelY + 72 + i * 24);
+        for (int i = 0; i < this.selectButtons.size(); i++) {
+            this.selectButtons.get(i).setX(x + 26);
+            this.selectButtons.get(i).setY(y + 126 + i * 23);
+            this.deleteButtons.get(i).setX(x + 284);
+            this.deleteButtons.get(i).setY(y + 126 + i * 23);
         }
 
-        this.prevButton.setX(panelX + 36);
-        this.prevButton.setY(panelY + 196);
-        this.backButton.setX(panelX + 106);
-        this.backButton.setY(panelY + 196);
-        this.nextButton.setX(panelX + 252);
-        this.nextButton.setY(panelY + 196);
+        this.prevButton.setX(x + 26);
+        this.prevButton.setY(y + 220);
+        this.backButton.setX(x + 100);
+        this.backButton.setY(y + 220);
+        this.nextButton.setX(x + 284);
+        this.nextButton.setY(y + 220);
     }
 
-    private void drawSelectedNick(GuiGraphics graphics, int panelY) {
-        String nick = AltManager.getSelectedNick();
-        Component selected = nick.isEmpty()
-                ? Component.translatable("screen.almatyclient.alt_manager.selected.none")
-                : Component.translatable("screen.almatyclient.alt_manager.selected", nick);
-
-        graphics.drawCenteredString(this.font, selected, this.width / 2, panelY + 60, 0xFF52FFA8);
+    private Component selectedLabel() {
+        String selected = AltManager.getSelectedNick();
+        return selected.isEmpty()
+                ? Component.literal("Current: none")
+                : Component.literal("Current: " + selected);
     }
 
     private int panelX() {
@@ -283,17 +256,5 @@ public final class AltManagerScreen extends Screen {
     private int maxPage() {
         int count = AltManager.getNicks().size();
         return Math.max(0, (count - 1) / PAGE_SIZE);
-    }
-
-    private static void setVisible(AbstractWidget widget, boolean visible) {
-        if (widget != null) {
-            widget.visible = visible;
-            widget.active = visible;
-        }
-    }
-
-    private enum Tab {
-        ADD,
-        SAVED
     }
 }
