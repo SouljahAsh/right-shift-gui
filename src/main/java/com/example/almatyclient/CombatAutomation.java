@@ -3,7 +3,6 @@ package com.example.almatyclient;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -110,7 +109,9 @@ public final class CombatAutomation {
         if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
             return;
         }
-        syncAttackRotation(player, target);
+        if (auraRotate()) {
+            syncVisualRotation(player, target);
+        }
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
@@ -260,11 +261,7 @@ public final class CombatAutomation {
         return new Vec3(x, targetY, z);
     }
 
-    private static void syncAttackRotation(LocalPlayer player, Entity target) {
-        if (player.connection == null) {
-            return;
-        }
-
+    private static void syncVisualRotation(LocalPlayer player, Entity target) {
         float[] rotation = targetRotation(player, target);
         float yaw = rotation[0];
         float pitch = clamp(rotation[1], -90.0F, 90.0F);
@@ -272,7 +269,6 @@ public final class CombatAutomation {
         player.setXRot(pitch);
         player.yHeadRot = yaw;
         player.yBodyRot = yaw;
-        player.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, player.onGround(), player.horizontalCollision));
     }
 
     public static boolean isAuraEnabled() {
