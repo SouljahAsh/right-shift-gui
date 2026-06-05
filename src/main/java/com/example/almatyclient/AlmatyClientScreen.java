@@ -44,6 +44,7 @@ public final class AlmatyClientScreen extends Screen {
     private double resizeStartMouseY;
     private double dragOffsetX;
     private double dragOffsetY;
+    private final boolean[] collapsedTabs = new boolean[Tab.values().length];
 
     public AlmatyClientScreen(Screen parent) {
         super(Component.literal("AlmatyClient"));
@@ -59,6 +60,9 @@ public final class AlmatyClientScreen extends Screen {
             this.panelX = AlmatyConfig.getInt("gui.x", this.width / 2 - scaled(this.panelWidth) / 2);
             this.panelY = AlmatyConfig.getInt("gui.y", this.height / 2 - scaled(this.panelHeight) / 2);
             this.activeTab = readSavedTab();
+            for (Tab tab : Tab.values()) {
+                this.collapsedTabs[tab.ordinal()] = tab != this.activeTab;
+            }
             this.layoutInitialized = true;
         }
         clampPanelToScreen();
@@ -122,8 +126,13 @@ public final class AlmatyClientScreen extends Screen {
 
         Tab clickedTab = tabAt(mouseX, mouseY);
         if (clickedTab != null) {
-            this.activeTab = clickedTab;
-            this.contentScroll = 0;
+            if (clickedTab == this.activeTab) {
+                this.collapsedTabs[clickedTab.ordinal()] = !this.collapsedTabs[clickedTab.ordinal()];
+            } else {
+                this.activeTab = clickedTab;
+                this.collapsedTabs[clickedTab.ordinal()] = false;
+                this.contentScroll = 0;
+            }
             saveSelectedTab();
             playUiSound(1.1F);
             return true;
@@ -232,27 +241,34 @@ public final class AlmatyClientScreen extends Screen {
     private void drawSidebar(GuiGraphics graphics, int y) {
         int sidebar = sidebarWidth();
         int accent = AlmatyClient.accentColor(255);
-        graphics.fill(this.panelX, y, this.panelX + sidebar, y + this.panelHeight, 0x77050A12);
-        graphics.fill(this.panelX + sidebar, y + 1, this.panelX + sidebar + 1, y + this.panelHeight - 1, 0xFF171D2B);
+        graphics.fill(this.panelX, y, this.panelX + sidebar, y + this.panelHeight, 0x44050A12);
+        graphics.fill(this.panelX + sidebar, y + 1, this.panelX + sidebar + 1, y + this.panelHeight - 1, 0x77171D2B);
 
         drawLargeStringFit(graphics, "A", this.panelX + 24, y + 23, 18, accent);
         drawLargeStringFit(graphics, "AlmatyClient", this.panelX + 43, y + 23, sidebar - 58, 0xFFFFFFFF);
 
-        int tabY = y + 74;
+        int tabY = y + 66;
         for (Tab tab : Tab.values()) {
             boolean active = tab == this.activeTab;
-            int rowY = tabY + tab.ordinal() * 48;
+            boolean collapsed = this.collapsedTabs[tab.ordinal()];
+            int islandHeight = collapsed ? 38 : 76;
+            int rowY = tabY;
             int rowX = this.panelX + 14;
             int rowW = sidebar - 28;
+            drawRoundedRect(graphics, rowX, rowY, rowW, islandHeight, 8, active ? 0xAA101828 : 0x77101828);
             if (active) {
-                graphics.fill(rowX, rowY, rowX + rowW, rowY + 36, AlmatyClient.accentColor(135));
-                graphics.fill(rowX, rowY, rowX + 3, rowY + 36, accent);
-                graphics.fill(rowX + rowW - 1, rowY, rowX + rowW, rowY + 36, 0x663E74FF);
-            } else {
-                graphics.fill(rowX, rowY, rowX + rowW, rowY + 36, 0x22101828);
+                drawRoundedRect(graphics, rowX, rowY, rowW, 38, 8, AlmatyClient.accentColor(135));
+                graphics.fill(rowX, rowY + 8, rowX + 3, rowY + 30, accent);
             }
             drawStringFit(graphics, tab.icon, rowX + 14, rowY + 11, 16, active ? 0xFFFFFFFF : 0xFF758099);
-            drawLargeStringFit(graphics, tab.title, rowX + 38, rowY + 9, rowW - 48, active ? 0xFFFFFFFF : 0xFFADB4C8);
+            drawLargeStringFit(graphics, tab.title, rowX + 38, rowY + 9, rowW - 64, active ? 0xFFFFFFFF : 0xFFADB4C8);
+            drawStringFit(graphics, collapsed ? "+" : "-", rowX + rowW - 20, rowY + 11, 14, active ? 0xFFFFFFFF : 0xFF8F98B1);
+
+            if (!collapsed) {
+                drawRoundedRect(graphics, rowX + 10, rowY + 44, rowW - 20, 24, 6, active ? 0x66151B2A : 0x44151B2A);
+                drawStringFit(graphics, moduleTitle(tab), rowX + 20, rowY + 51, rowW - 40, active ? 0xFFE7ECFF : 0xFF9BA3B7);
+            }
+            tabY += islandHeight + 10;
         }
 
         int cardY = y + this.panelHeight - 86;
@@ -328,7 +344,7 @@ public final class AlmatyClientScreen extends Screen {
 
     private void drawModuleCard(GuiGraphics graphics, int x, int y, int w, String title, String subtitle, boolean enabled, boolean active) {
         int border = active ? AlmatyClient.accentColor(230) : 0xFF20283A;
-        graphics.fill(x, y, x + w, y + 70, active ? 0x88101828 : 0x55101828);
+        drawRoundedRect(graphics, x, y, w, 70, 8, active ? 0x88101828 : 0x55101828);
         graphics.fill(x, y, x + w, y + 1, border);
         graphics.fill(x, y + 69, x + w, y + 70, 0xFF171D2B);
         graphics.fill(x, y, x + 1, y + 70, border);
@@ -340,7 +356,7 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private void drawDetailPanel(GuiGraphics graphics, int x, int y, int w) {
-        graphics.fill(x, y, x + w, y + detailHeight(), 0x66101828);
+        drawRoundedRect(graphics, x, y, w, detailHeight(), 8, 0x66101828);
         graphics.fill(x, y, x + w, y + 1, 0xFF20283A);
         graphics.fill(x, y, x + 1, y + detailHeight(), 0xFF20283A);
         graphics.fill(x + w - 1, y, x + w, y + detailHeight(), 0xFF20283A);
@@ -676,11 +692,13 @@ public final class AlmatyClientScreen extends Screen {
         int sidebar = sidebarWidth();
         int x = this.panelX + 14;
         int w = sidebar - 28;
+        int y = this.panelY + 66;
         for (Tab tab : Tab.values()) {
-            int y = this.panelY + 74 + tab.ordinal() * 48;
-            if (inside(mouseX, mouseY, x, y, w, 36)) {
+            int h = this.collapsedTabs[tab.ordinal()] ? 38 : 76;
+            if (inside(mouseX, mouseY, x, y, w, h)) {
                 return tab;
             }
+            y += h + 10;
         }
         return null;
     }
@@ -908,6 +926,22 @@ public final class AlmatyClientScreen extends Screen {
         return String.format(java.util.Locale.ROOT, "%.1f blocks", CombatAutomation.auraRange());
     }
 
+    private static String moduleTitle(Tab tab) {
+        if (tab == Tab.MOVEMENT) {
+            return "Sprint";
+        }
+        if (tab == Tab.COMBAT) {
+            return "Aura";
+        }
+        if (tab == Tab.VISUALS) {
+            return "Particles";
+        }
+        if (tab == Tab.PLAYERS) {
+            return "ESP";
+        }
+        return "Colors";
+    }
+
     private double toLogicalX(double mouseX) {
         return this.panelX + (mouseX - this.panelX) / GUI_SCALE;
     }
@@ -930,6 +964,16 @@ public final class AlmatyClientScreen extends Screen {
 
     private static int colorWithAlpha(int alpha, int red, int green, int blue) {
         return ((alpha & 255) << 24) | ((red & 255) << 16) | ((green & 255) << 8) | (blue & 255);
+    }
+
+    private static void drawRoundedRect(GuiGraphics graphics, int x, int y, int w, int h, int radius, int color) {
+        int r = Math.max(1, Math.min(radius, Math.min(w, h) / 2));
+        graphics.fill(x + r, y, x + w - r, y + h, color);
+        graphics.fill(x, y + r, x + w, y + h - r, color);
+        graphics.fill(x + 1, y + r / 2, x + r, y + r, color);
+        graphics.fill(x + w - r, y + r / 2, x + w - 1, y + r, color);
+        graphics.fill(x + 1, y + h - r, x + r, y + h - r / 2, color);
+        graphics.fill(x + w - r, y + h - r, x + w - 1, y + h - r / 2, color);
     }
 
     private void playUiSound(float pitch) {

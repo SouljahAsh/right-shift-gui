@@ -110,7 +110,7 @@ public final class CombatAutomation {
         if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
             return;
         }
-        syncServerRotation(player, target, auraRotate());
+        syncAttackRotation(player, target);
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
@@ -207,7 +207,7 @@ public final class CombatAutomation {
     private static void leapTowardTarget(Minecraft client, LocalPlayer player, Entity target) {
         double distanceSq = distanceToHitboxSqr(player.getEyePosition(), target.getBoundingBox());
         if (distanceSq > LEAP_STOP_DISTANCE_SQ) {
-            forceForwardMovement(client);
+            releaseForcedMovement(client);
         } else {
             releaseForcedMovement(client);
         }
@@ -260,7 +260,7 @@ public final class CombatAutomation {
         return new Vec3(x, targetY, z);
     }
 
-    private static void syncServerRotation(LocalPlayer player, Entity target, boolean applyVisualRotation) {
+    private static void syncAttackRotation(LocalPlayer player, Entity target) {
         if (player.connection == null) {
             return;
         }
@@ -268,12 +268,10 @@ public final class CombatAutomation {
         float[] rotation = targetRotation(player, target);
         float yaw = rotation[0];
         float pitch = clamp(rotation[1], -90.0F, 90.0F);
-        if (applyVisualRotation) {
-            player.setYRot(yaw);
-            player.setXRot(pitch);
-            player.yHeadRot = yaw;
-            player.yBodyRot = yaw;
-        }
+        player.setYRot(yaw);
+        player.setXRot(pitch);
+        player.yHeadRot = yaw;
+        player.yBodyRot = yaw;
         player.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, player.onGround(), player.horizontalCollision));
     }
 
