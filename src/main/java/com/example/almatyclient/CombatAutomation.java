@@ -28,7 +28,7 @@ public final class CombatAutomation {
     private static final int MOVE_LEAP_IN = 1;
     private static final int TARGET_NEAREST = 0;
     private static final int TARGET_LOWEST_HEALTH = 1;
-    private static final double ATTACK_REACH = 3.18D;
+    private static final double ATTACK_REACH = 2.95D;
     private static final double ATTACK_REACH_SQ = ATTACK_REACH * ATTACK_REACH;
     private static final double LEAP_STOP_DISTANCE = 2.55D;
     private static final double LEAP_STOP_DISTANCE_SQ = LEAP_STOP_DISTANCE * LEAP_STOP_DISTANCE;
@@ -39,11 +39,13 @@ public final class CombatAutomation {
     private static final int REQUIRED_AIM_READY_TICKS = 1;
     private static final int ATTACK_SYNC_TICKS = 3;
     private static final int LEAP_JUMP_COOLDOWN_TICKS = 5;
+    private static final int SELF_HURT_SKIP_TICKS = 2;
 
     private static int lockedTargetId = -1;
     private static int aimReadyTicks;
     private static int ticksSinceAttack = ATTACK_SYNC_TICKS;
     private static int jumpCooldown;
+    private static int selfHurtCooldown;
     private static boolean forcedForward;
 
     private CombatAutomation() {
@@ -93,11 +95,18 @@ public final class CombatAutomation {
         if (jumpCooldown > 0) {
             jumpCooldown--;
         }
+        updateSelfHurtCooldown(player);
         ticksSinceAttack++;
         if (player.getAttackStrengthScale(0.0F) < 1.0F) {
             return;
         }
+        if (selfHurtCooldown > 0) {
+            return;
+        }
         if (aimReadyTicks < REQUIRED_AIM_READY_TICKS) {
+            return;
+        }
+        if (isTargetDamageImmune(target)) {
             return;
         }
         if (!isInAttackReach(player, target)) {
@@ -225,6 +234,18 @@ public final class CombatAutomation {
                 && !player.isInLava()
                 && !player.onClimbable()
                 && !player.isPassenger();
+    }
+
+    private static boolean isTargetDamageImmune(Entity target) {
+        return target instanceof LivingEntity living && living.hurtTime > 0;
+    }
+
+    private static void updateSelfHurtCooldown(LocalPlayer player) {
+        if (player.hurtTime > 0) {
+            selfHurtCooldown = SELF_HURT_SKIP_TICKS;
+        } else if (selfHurtCooldown > 0) {
+            selfHurtCooldown--;
+        }
     }
 
     private static boolean isInAttackReach(LocalPlayer player, Entity target) {
@@ -362,6 +383,7 @@ public final class CombatAutomation {
         lockedTargetId = -1;
         aimReadyTicks = 0;
         ticksSinceAttack = ATTACK_SYNC_TICKS;
+        selfHurtCooldown = 0;
     }
 
     private static void forceForwardMovement(Minecraft client) {
