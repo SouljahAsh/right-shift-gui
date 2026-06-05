@@ -3,13 +3,14 @@ package com.example.almatyclient.mixin;
 import com.example.almatyclient.AltManagerScreen;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.LogoRenderer;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(TitleScreen.class)
@@ -37,15 +38,33 @@ public abstract class TitleScreenMixin extends Screen {
         ).bounds(buttonX, y, buttonWidth, 20).build());
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void almatyclient$renderLogo(GuiGraphics graphics, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        int logoY = 28;
-        int centerX = this.width / 2;
-        int logoWidth = 236;
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/components/LogoRenderer;renderLogo(Lnet/minecraft/client/gui/GuiGraphics;IF)V"
+            ),
+            require = 0
+    )
+    private void almatyclient$replaceLogo(LogoRenderer renderer, GuiGraphics graphics, int screenWidth, float alpha) {
+        drawAlmatyLogo(graphics, screenWidth);
+    }
 
-        graphics.fill(centerX - logoWidth / 2 - 8, logoY - 8, centerX + logoWidth / 2 + 8, logoY + 42, 0xD0000000);
-        graphics.fill(centerX - logoWidth / 2 - 8, logoY + 42, centerX + logoWidth / 2 + 8, logoY + 45, 0xFF143D7A);
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/components/LogoRenderer;renderLogo(Lnet/minecraft/client/gui/GuiGraphics;IFI)V"
+            ),
+            require = 0
+    )
+    private void almatyclient$replaceLogoWithY(LogoRenderer renderer, GuiGraphics graphics, int screenWidth, float alpha, int y) {
+        drawAlmatyLogo(graphics, screenWidth);
+    }
 
+    private void drawAlmatyLogo(GuiGraphics graphics, int screenWidth) {
+        int logoY = 30;
+        int centerX = screenWidth / 2;
         graphics.pose().pushMatrix();
         graphics.pose().translate(centerX, logoY);
         graphics.pose().scale(2.15F, 2.15F);

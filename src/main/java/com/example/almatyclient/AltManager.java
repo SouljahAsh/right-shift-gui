@@ -1,14 +1,24 @@
 package com.example.almatyclient;
 
 import com.mojang.authlib.GameProfile;
+import com.example.almatyclient.mixin.ClientPacketListenerAccessor;
+import com.example.almatyclient.mixin.MinecraftUserAccessor;
+import com.example.almatyclient.mixin.PlayerGameProfileAccessor;
+import com.example.almatyclient.mixin.PlayerInfoAccessor;
+import net.minecraft.client.User;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.network.chat.Component;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Collection;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 
 public final class AltManager {
     private static final String NICKS_KEY = "alts.nicks";
@@ -121,15 +131,125 @@ public final class AltManager {
             return;
         }
 
-        Object user = client.getUser();
+        User user = client.getUser();
+        UUID profileId = user != null ? user.getProfileId() : null;
+
         if (user != null) {
+            User renamedUser = new User(
+                    nick,
+                    user.getProfileId(),
+                    user.getAccessToken(),
+                    user.getXuid(),
+                    user.getClientId()
+            );
+            ((MinecraftUserAccessor) client).almatyclient$setUser(renamedUser);
+            replaceFieldsOfType(client, User.class, renamedUser);
             replaceStringFields(user, nick);
         }
 
+        GameProfile replacement = null;
         if (client.player != null) {
-            GameProfile profile = client.player.getGameProfile();
-            replaceStringFields(profile, nick);
+            GameProfile current = client.player.getGameProfile();
+            profileId = current.id() != null ? current.id() : profileId;
+            replacement = createRenamedProfile(current, nick);
+
+            ((PlayerGameProfileAccessor) client.player).almatyclient$setGameProfile(replacement);
+            replaceGameProfileFields(client.player, profileId, replacement);
+            replaceStringFields(client.player, nick);
+            client.player.setCustomName(Component.literal(nick));
+            client.player.setCustomNameVisible(false);
         }
+
+        if (replacement == null && profileId != null) {
+            replacement = new GameProfile(profileId, nick);
+        }
+
+        if (replacement != null) {
+            replaceGameProfileFields(client, profileId, replacement);
+            replaceGameProfileFields(client.level, profileId, replacement);
+            updateConnectionProfiles(client.getConnection(), profileId, replacement);
+        }
+    }
+
+    private static void updateConnectionProfiles(ClientPacketListener connection, UUID profileId, GameProfile replacement) {
+        if (connection == null || profileId == null) {
+            return;
+        }
+
+        replaceGameProfileFields(connection, profileId, replacement);
+        ((ClientPacketListenerAccessor) connection).almatyclient$setLocalGameProfile(replacement);
+
+        PlayerInfo localInfo = connection.getPlayerInfo(profileId);
+        if (localInfo != null) {
+            ((PlayerInfoAccessor) localInfo).almatyclient$setProfile(replacement);
+            replaceGameProfileFields(localInfo, profileId, replacement);
+            replaceStringFields(localInfo, replacement.name());
+        }
+
+        Collection<PlayerInfo> listed = connection.getListedOnlinePlayers();
+        for (PlayerInfo info : listed) {
+            if (info != null && info.getProfile() != null && profileId.equals(info.getProfile().id())) {
+                ((PlayerInfoAccessor) info).almatyclient$setProfile(replacement);
+                replaceGameProfileFields(info, profileId, replacement);
+                replaceStringFields(info, replacement.name());
+            }
+        }
+    }
+
+    private static GameProfile createRenamedProfile(GameProfile oldProfile, String nick) {
+        return new GameProfile(oldProfile.id(), nick, oldProfile.properties());
+    }
+
+    private static void replaceGameProfileFields(Object target, UUID profileId, GameProfile replacement) {
+        if (target == null || profileId == null || replacement == null) {
+            return;
+        }
+
+        Class<?> type = target.getClass();
+        while (type != null) {
+            for (Field field : type.getDeclaredFields()) {
+                if (field.getType() != GameProfile.class || Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+
+                try {
+                    field.setAccessible(true);
+                    GameProfile current = (GameProfile) field.get(target);
+                    if (current == null || profileId.equals(current.id()) || isLocalProfileField(field)) {
+                        field.set(target, replacement);
+                    }
+                } catch (IllegalAccessException | RuntimeException ignored) {
+                }
+            }
+            type = type.getSuperclass();
+        }
+    }
+
+    private static <T> void replaceFieldsOfType(Object target, Class<T> fieldType, T value) {
+        if (target == null || value == null) {
+            return;
+        }
+
+        Class<?> type = target.getClass();
+        while (type != null) {
+            for (Field field : type.getDeclaredFields()) {
+                if (field.getType() != fieldType || Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+
+                try {
+                    field.setAccessible(true);
+                    field.set(target, value);
+                } catch (IllegalAccessException | RuntimeException ignored) {
+                }
+            }
+            type = type.getSuperclass();
+        }
+    }
+
+    private static boolean isLocalProfileField(Field field) {
+        String name = field.getName().toLowerCase();
+        return name.contains("local") || name.contains("singleplayer");
     }
 
     private static void replaceStringFields(Object target, String value) {
@@ -142,9 +262,8 @@ public final class AltManager {
 
                 try {
                     field.setAccessible(true);
-                    String current = (String) field.get(target);
                     String name = field.getName().toLowerCase();
-                    if (name.contains("name") || current == null || current.equals(getSelectedNick())) {
+                    if (name.contains("name") || name.contains("username")) {
                         field.set(target, value);
                     }
                 } catch (IllegalAccessException | RuntimeException ignored) {
