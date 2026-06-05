@@ -47,7 +47,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ESP_NAME_KEY = "esp.name";
     private static final String ESP_HEALTH_KEY = "esp.health";
     private static final int ESP_LINE_WIDTH = 2;
-    private static final int AUTO_SPRINT_DELAY_TICKS = 4;
+    private static final int AUTO_SPRINT_DELAY_TICKS = 1;
 
     private static final RenderPipeline ESP_LINES_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
             .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "esp_lines"))
@@ -284,7 +284,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static void applyEspLabel(Entity entity, String label) {
         NameState state = FORCED_NAMES.get(entity.getId());
         if (state == null) {
-            state = new NameState(entity.getCustomName(), entity.isCustomNameVisible(), "");
+            state = new NameState(entity.getCustomName(), entity.isCustomNameVisible(), baseDisplayName(entity), "");
             FORCED_NAMES.put(entity.getId(), state);
         }
 
@@ -294,7 +294,7 @@ public final class AlmatyClient implements ClientModInitializer {
 
         entity.setCustomName(Component.literal(label));
         entity.setCustomNameVisible(true);
-        FORCED_NAMES.put(entity.getId(), new NameState(state.originalName(), state.originalVisible(), label));
+        FORCED_NAMES.put(entity.getId(), new NameState(state.originalName(), state.originalVisible(), state.baseName(), label));
     }
 
     private static void restoreNamePlate(Entity entity) {
@@ -383,7 +383,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static String entityLabel(Entity entity, LivingEntity living) {
         StringBuilder text = new StringBuilder();
         if (espName()) {
-            text.append(entityDisplayName(entity));
+            text.append(baseDisplayName(entity));
         }
         if (espHealth()) {
             if (!text.isEmpty()) {
@@ -394,22 +394,36 @@ public final class AlmatyClient implements ClientModInitializer {
         return text.toString();
     }
 
-    private static String entityDisplayName(Entity entity) {
+    private static String baseDisplayName(Entity entity) {
         NameState state = FORCED_NAMES.get(entity.getId());
-        if (state != null && state.originalName() != null) {
-            return state.originalName().getString();
-        }
-
-        Component customName = entity.getCustomName();
-        if (customName != null) {
-            return customName.getString();
+        if (state != null) {
+            return state.baseName();
         }
 
         if (entity instanceof Player player) {
             return player.getPlainTextName();
         }
 
+        Component customName = entity.getCustomName();
+        if (customName != null) {
+            return stripEspLabel(customName.getString());
+        }
+
         return entity.getType().getDescription().getString();
+    }
+
+    private static String stripEspLabel(String name) {
+        String stripped = name;
+        int separator = stripped.indexOf(" | HP:");
+        if (separator >= 0) {
+            stripped = stripped.substring(0, separator);
+        } else if (stripped.startsWith("HP:")) {
+            stripped = stripped.substring(3).trim();
+            while (!stripped.isEmpty() && (Character.isDigit(stripped.charAt(0)) || stripped.charAt(0) == '.' || stripped.charAt(0) == ' ')) {
+                stripped = stripped.substring(1).trim();
+            }
+        }
+        return stripped.isBlank() ? "Entity" : stripped;
     }
 
     private static void spawnWaterBubbles(LivingEntity entity) {
@@ -442,6 +456,6 @@ public final class AlmatyClient implements ClientModInitializer {
         return Math.max(0, Math.min(255, value));
     }
 
-    private record NameState(Component originalName, boolean originalVisible, String lastLabel) {
+    private record NameState(Component originalName, boolean originalVisible, String baseName, String lastLabel) {
     }
 }
