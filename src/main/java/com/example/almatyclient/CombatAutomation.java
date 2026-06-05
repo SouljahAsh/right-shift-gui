@@ -3,7 +3,6 @@ package com.example.almatyclient;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -45,7 +44,6 @@ public final class CombatAutomation {
     private static int aimReadyTicks;
     private static int ticksSinceAttack = ATTACK_SYNC_TICKS;
     private static int jumpCooldown;
-    private static boolean restoreServerRotationNextTick;
     private static boolean forcedForward;
 
     private CombatAutomation() {
@@ -57,20 +55,17 @@ public final class CombatAutomation {
 
     private static void tick(Minecraft client) {
         if (!isAuraEnabled()) {
-            restoreServerRotation(client);
             clearLockedTarget();
             releaseForcedMovement(client);
             return;
         }
         if (client.level == null || client.player == null || client.gameMode == null) {
-            restoreServerRotation(client);
             clearLockedTarget();
             releaseForcedMovement(client);
             return;
         }
 
         LocalPlayer player = client.player;
-        restoreServerRotation(player);
         Entity target = lockedTarget(client, player);
         if (target == null) {
             target = findTarget(client, player);
@@ -88,6 +83,9 @@ public final class CombatAutomation {
                 aimReadyTicks = 0;
                 return;
             }
+        } else if (!isAimReady(player, target)) {
+            aimReadyTicks = 0;
+            return;
         }
         aimReadyTicks++;
         if (auraJumpOnly() && auraMoveMode() == MOVE_LEAP_IN) {
@@ -114,7 +112,9 @@ public final class CombatAutomation {
         if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
             return;
         }
-        syncAttackRotation(player, target, auraRotate());
+        if (auraRotate()) {
+            syncVisualRotation(player, target);
+        }
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
@@ -274,38 +274,6 @@ public final class CombatAutomation {
         player.yBodyRot = yaw;
     }
 
-    private static void syncAttackRotation(LocalPlayer player, Entity target, boolean applyVisualRotation) {
-        float[] rotation = targetRotation(player, target);
-        float yaw = rotation[0];
-        float pitch = clamp(rotation[1], -90.0F, 90.0F);
-        if (applyVisualRotation) {
-            player.setYRot(yaw);
-            player.setXRot(pitch);
-            player.yHeadRot = yaw;
-            player.yBodyRot = yaw;
-        } else {
-            restoreServerRotationNextTick = true;
-        }
-        if (player.connection != null) {
-            player.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, player.onGround(), player.horizontalCollision));
-        }
-    }
-
-    private static void restoreServerRotation(Minecraft client) {
-        if (client != null && client.player != null) {
-            restoreServerRotation(client.player);
-        }
-    }
-
-    private static void restoreServerRotation(LocalPlayer player) {
-        if (!restoreServerRotationNextTick || player.connection == null) {
-            return;
-        }
-
-        player.connection.send(new ServerboundMovePlayerPacket.Rot(player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
-        restoreServerRotationNextTick = false;
-    }
-
     public static boolean isAuraEnabled() {
         return AlmatyConfig.getBoolean(AURA_ENABLED_KEY, false);
     }
@@ -397,7 +365,6 @@ public final class CombatAutomation {
         lockedTargetId = -1;
         aimReadyTicks = 0;
         ticksSinceAttack = ATTACK_SYNC_TICKS;
-        restoreServerRotationNextTick = false;
     }
 
     private static void forceForwardMovement(Minecraft client) {
