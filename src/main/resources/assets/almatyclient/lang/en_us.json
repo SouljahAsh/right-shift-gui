@@ -1,0 +1,11 @@
+{
+  "key.category.almatyclient.controls": "AlmatyClient",
+  "key.almatyclient.open_gui": "Open AlmatyClient",
+  "screen.almatyclient.title": "AlmatyClient",
+  "screen.almatyclient.description": "Right Shift menu",
+  "screen.almatyclient.autosprint.enabled": "Auto Sprint: ON",
+  "screen.almatyclient.autosprint.disabled": "Auto Sprint: OFF",
+  "screen.almatyclient.autosprint.status": "Auto Sprint %s",
+  "screen.almatyclient.autosprint.hint": "Hold W to sprint automatically",
+  "screen.almatyclient.close": "Close"
+}

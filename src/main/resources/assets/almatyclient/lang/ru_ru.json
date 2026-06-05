@@ -1,0 +1,11 @@
+{
+  "key.category.almatyclient.controls": "AlmatyClient",
+  "key.almatyclient.open_gui": "Открыть AlmatyClient",
+  "screen.almatyclient.title": "AlmatyClient",
+  "screen.almatyclient.description": "Меню на правый Shift",
+  "screen.almatyclient.autosprint.enabled": "Авто-спринт: ВКЛ",
+  "screen.almatyclient.autosprint.disabled": "Авто-спринт: ВЫКЛ",
+  "screen.almatyclient.autosprint.status": "Авто-спринт %s",
+  "screen.almatyclient.autosprint.hint": "Зажми W, чтобы сразу бежать",
+  "screen.almatyclient.close": "Закрыть"
+}
