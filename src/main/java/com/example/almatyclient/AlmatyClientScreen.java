@@ -3,20 +3,22 @@ package com.example.almatyclient;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
 
 public final class AlmatyClientScreen extends Screen {
-    private static final int MIN_PANEL_WIDTH = 720;
-    private static final int MIN_PANEL_HEIGHT = 420;
+    private static final int MIN_PANEL_WIDTH = 640;
+    private static final int MIN_PANEL_HEIGHT = 360;
     private static final int RESIZE_HANDLE = 8;
     private static final int RESIZE_LEFT = 1;
     private static final int RESIZE_RIGHT = 2;
     private static final int RESIZE_TOP = 4;
     private static final int RESIZE_BOTTOM = 8;
     private static final int RESET_BUTTON_HEIGHT = 28;
-    private static final float GUI_SCALE = 2.0F / 3.0F;
+    private static final float GUI_SCALE = 0.72F;
 
     private final Screen parent;
     private final long openedAt;
@@ -29,8 +31,8 @@ public final class AlmatyClientScreen extends Screen {
     private int resizeMode;
     private int panelX;
     private int panelY;
-    private int panelWidth = 860;
-    private int panelHeight = 500;
+    private int panelWidth = 720;
+    private int panelHeight = 430;
     private int resizeStartPanelX;
     private int resizeStartPanelY;
     private int resizeStartPanelWidth;
@@ -97,6 +99,7 @@ public final class AlmatyClientScreen extends Screen {
         double mouseY = toLogicalY(physicalMouseY);
 
         if (event.button() == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && openBindSelection(mouseX, mouseY)) {
+            playUiSound(1.25F);
             return true;
         }
 
@@ -112,6 +115,7 @@ public final class AlmatyClientScreen extends Screen {
         }
 
         if (isInClose(mouseX, mouseY)) {
+            playUiSound(0.75F);
             beginClose();
             return true;
         }
@@ -121,6 +125,7 @@ public final class AlmatyClientScreen extends Screen {
             this.activeTab = clickedTab;
             this.contentScroll = 0;
             saveSelectedTab();
+            playUiSound(1.1F);
             return true;
         }
 
@@ -128,10 +133,12 @@ public final class AlmatyClientScreen extends Screen {
         if (slider >= 0) {
             this.activeSlider = slider;
             updateColorSlider(slider, mouseX);
+            playUiSound(1.35F);
             return true;
         }
 
         if (clickActiveContent(mouseX, mouseY)) {
+            playUiSound(1.0F);
             return true;
         }
 
@@ -212,9 +219,11 @@ public final class AlmatyClientScreen extends Screen {
 
     private void drawShell(GuiGraphics graphics, int y, int animatedHeight) {
         int bottom = y + animatedHeight;
-        graphics.fill(this.panelX + 6, y + 8, this.panelX + this.panelWidth + 6, bottom + 8, 0x77000000);
-        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, bottom, 0xEA080D17);
-        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, y + 1, 0xFF20283A);
+        int pulse = 70 + Math.round(35.0F * (float) Math.sin(Util.getMillis() / 260.0D));
+        graphics.fill(this.panelX + 5, y + 7, this.panelX + this.panelWidth + 5, bottom + 7, 0x85000000);
+        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, bottom, 0xF0060A12);
+        graphics.fill(this.panelX, y, this.panelX + this.panelWidth, y + 2, AlmatyClient.accentColor(255));
+        graphics.fill(this.panelX + 1, y + 2, this.panelX + this.panelWidth - 1, y + 23, colorWithAlpha(pulse, AlmatyClient.guiRed(), AlmatyClient.guiGreen(), AlmatyClient.guiBlue()));
         graphics.fill(this.panelX, bottom - 1, this.panelX + this.panelWidth, bottom, 0xFF171D2B);
         graphics.fill(this.panelX, y, this.panelX + 1, bottom, 0xFF20283A);
         graphics.fill(this.panelX + this.panelWidth - 1, y, this.panelX + this.panelWidth, bottom, 0xFF20283A);
@@ -226,8 +235,8 @@ public final class AlmatyClientScreen extends Screen {
         graphics.fill(this.panelX, y, this.panelX + sidebar, y + this.panelHeight, 0x77050A12);
         graphics.fill(this.panelX + sidebar, y + 1, this.panelX + sidebar + 1, y + this.panelHeight - 1, 0xFF171D2B);
 
-        graphics.drawString(this.font, "A", this.panelX + 24, y + 25, accent, false);
-        drawStringFit(graphics, "AlmatyClient", this.panelX + 42, y + 25, sidebar - 58, 0xFFFFFFFF);
+        drawLargeStringFit(graphics, "A", this.panelX + 24, y + 23, 18, accent);
+        drawLargeStringFit(graphics, "AlmatyClient", this.panelX + 43, y + 23, sidebar - 58, 0xFFFFFFFF);
 
         int tabY = y + 74;
         for (Tab tab : Tab.values()) {
@@ -239,15 +248,17 @@ public final class AlmatyClientScreen extends Screen {
                 graphics.fill(rowX, rowY, rowX + rowW, rowY + 36, AlmatyClient.accentColor(135));
                 graphics.fill(rowX, rowY, rowX + 3, rowY + 36, accent);
                 graphics.fill(rowX + rowW - 1, rowY, rowX + rowW, rowY + 36, 0x663E74FF);
+            } else {
+                graphics.fill(rowX, rowY, rowX + rowW, rowY + 36, 0x22101828);
             }
             drawStringFit(graphics, tab.icon, rowX + 14, rowY + 11, 16, active ? 0xFFFFFFFF : 0xFF758099);
-            drawStringFit(graphics, tab.title, rowX + 38, rowY + 11, rowW - 48, active ? 0xFFFFFFFF : 0xFFADB4C8);
+            drawLargeStringFit(graphics, tab.title, rowX + 38, rowY + 9, rowW - 48, active ? 0xFFFFFFFF : 0xFFADB4C8);
         }
 
         int cardY = y + this.panelHeight - 86;
         graphics.fill(this.panelX + 14, cardY, this.panelX + sidebar - 14, cardY + 54, 0x77101828);
-        drawStringFit(graphics, "v1.0.0", this.panelX + 26, cardY + 13, sidebar - 52, 0xFF8F98B1);
-        drawStringFit(graphics, "Release", this.panelX + 26, cardY + 30, sidebar - 52, accent);
+        drawStringFit(graphics, "v1.0.0", this.panelX + 26, cardY + 12, sidebar - 52, 0xFF8F98B1);
+        drawLargeStringFit(graphics, "Release", this.panelX + 26, cardY + 27, sidebar - 52, accent);
     }
 
     private void drawTopBar(GuiGraphics graphics, int y) {
@@ -296,7 +307,7 @@ public final class AlmatyClientScreen extends Screen {
 
     private void drawSectionHeader(GuiGraphics graphics, int x, int y, int w, String title, String subtitle) {
         graphics.fill(x, y, x + w, y + 48, 0x44101828);
-        drawStringFit(graphics, title, x + 14, y + 10, w - 28, 0xFFFFFFFF);
+        drawLargeStringFit(graphics, title, x + 14, y + 8, w - 28, 0xFFFFFFFF);
         drawStringFit(graphics, subtitle, x + 14, y + 27, w - 28, 0xFF9BA3B7);
     }
 
@@ -317,13 +328,13 @@ public final class AlmatyClientScreen extends Screen {
 
     private void drawModuleCard(GuiGraphics graphics, int x, int y, int w, String title, String subtitle, boolean enabled, boolean active) {
         int border = active ? AlmatyClient.accentColor(230) : 0xFF20283A;
-        graphics.fill(x, y, x + w, y + 70, active ? 0x77101828 : 0x55101828);
+        graphics.fill(x, y, x + w, y + 70, active ? 0x88101828 : 0x55101828);
         graphics.fill(x, y, x + w, y + 1, border);
         graphics.fill(x, y + 69, x + w, y + 70, 0xFF171D2B);
         graphics.fill(x, y, x + 1, y + 70, border);
         graphics.fill(x + w - 1, y, x + w, y + 70, 0xFF171D2B);
         graphics.fill(x + 16, y + 17, x + 48, y + 49, active ? AlmatyClient.accentColor(115) : 0xFF151B2A);
-        drawStringFit(graphics, title, x + 62, y + 16, w - 122, 0xFFFFFFFF);
+        drawLargeStringFit(graphics, title, x + 62, y + 14, w - 122, 0xFFFFFFFF);
         drawStringFit(graphics, subtitle, x + 62, y + 33, w - 122, 0xFF9BA3B7);
         drawToggle(graphics, x + w - 52, y + 24, enabled);
     }
@@ -368,7 +379,7 @@ public final class AlmatyClientScreen extends Screen {
 
     private void drawDetailHeader(GuiGraphics graphics, int x, int y, int w, String title, boolean enabled) {
         graphics.fill(x + 22, y + 24, x + 74, y + 76, AlmatyClient.accentColor(115));
-        drawStringFit(graphics, title, x + 92, y + 30, w - 180, 0xFFFFFFFF);
+        drawLargeStringFit(graphics, title, x + 92, y + 28, w - 180, 0xFFFFFFFF);
         drawStatusPill(graphics, x + 92, y + 52, enabled);
         drawToggle(graphics, x + w - 70, y + 38, enabled);
         graphics.fill(x + 20, y + 90, x + w - 20, y + 91, 0xFF1B2233);
@@ -759,8 +770,8 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private void resetPanel() {
-        this.panelWidth = 860;
-        this.panelHeight = 500;
+        this.panelWidth = 720;
+        this.panelHeight = 430;
         this.panelX = this.width / 2 - scaled(this.panelWidth) / 2;
         this.panelY = this.height / 2 - scaled(this.panelHeight) / 2;
         this.contentScroll = 0;
@@ -790,7 +801,7 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int sidebarWidth() {
-        return Math.max(150, Math.min(210, this.panelWidth / 4));
+        return Math.max(142, Math.min(184, this.panelWidth / 4));
     }
 
     private int moduleListX() {
@@ -798,7 +809,7 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int moduleListWidth() {
-        return Math.max(210, Math.min(290, (this.panelWidth - sidebarWidth() - 56) * 38 / 100));
+        return Math.max(190, Math.min(250, (this.panelWidth - sidebarWidth() - 52) * 38 / 100));
     }
 
     private int resetButtonX() {
@@ -814,7 +825,7 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int detailX() {
-        return moduleListX() + moduleListWidth() + 16;
+        return moduleListX() + moduleListWidth() + 12;
     }
 
     private int detailWidth() {
@@ -830,7 +841,7 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int contentViewportWidth() {
-        return this.panelX + this.panelWidth - 20 - contentViewportX();
+        return this.panelX + this.panelWidth - 16 - contentViewportX();
     }
 
     private int contentViewportHeight() {
@@ -860,6 +871,18 @@ public final class AlmatyClientScreen extends Screen {
         }
 
         graphics.drawString(this.font, fitText(text, maxWidth), x, y, color, false);
+    }
+
+    private void drawLargeStringFit(GuiGraphics graphics, String text, int x, int y, int maxWidth, int color) {
+        if (maxWidth <= 0 || text == null || text.isEmpty()) {
+            return;
+        }
+
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(x, y);
+        graphics.pose().scale(1.12F, 1.12F);
+        graphics.drawString(this.font, fitText(text, Math.round(maxWidth / 1.12F)), 0, 0, color, false);
+        graphics.pose().popMatrix();
     }
 
     private String fitText(String text, int maxWidth) {
@@ -907,6 +930,12 @@ public final class AlmatyClientScreen extends Screen {
 
     private static int colorWithAlpha(int alpha, int red, int green, int blue) {
         return ((alpha & 255) << 24) | ((red & 255) << 16) | ((green & 255) << 8) | (blue & 255);
+    }
+
+    private void playUiSound(float pitch) {
+        if (this.minecraft != null) {
+            this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, pitch));
+        }
     }
 
     private enum Tab {

@@ -3,6 +3,7 @@ package com.example.almatyclient;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -28,18 +29,22 @@ public final class CombatAutomation {
     private static final int MOVE_LEAP_IN = 1;
     private static final int TARGET_NEAREST = 0;
     private static final int TARGET_LOWEST_HEALTH = 1;
-    private static final double ATTACK_REACH = 3.0D;
+    private static final double ATTACK_REACH = 3.18D;
     private static final double ATTACK_REACH_SQ = ATTACK_REACH * ATTACK_REACH;
-    private static final double LEAP_STOP_DISTANCE = 2.75D;
+    private static final double LEAP_STOP_DISTANCE = 2.55D;
     private static final double LEAP_STOP_DISTANCE_SQ = LEAP_STOP_DISTANCE * LEAP_STOP_DISTANCE;
-    private static final float CRITICAL_FALL_DISTANCE = 0.08F;
-    private static final float MAX_YAW_STEP = 32.0F;
-    private static final float MAX_PITCH_STEP = 24.0F;
-    private static final float AIM_TOLERANCE = 1.5F;
-    private static final int REQUIRED_AIM_READY_TICKS = 2;
+    private static final float CRITICAL_FALL_DISTANCE = 0.11F;
+    private static final float MAX_YAW_STEP = 52.0F;
+    private static final float MAX_PITCH_STEP = 38.0F;
+    private static final float AIM_TOLERANCE = 2.8F;
+    private static final int REQUIRED_AIM_READY_TICKS = 1;
+    private static final int ATTACK_SYNC_TICKS = 3;
+    private static final int LEAP_JUMP_COOLDOWN_TICKS = 5;
 
     private static int lockedTargetId = -1;
     private static int aimReadyTicks;
+    private static int ticksSinceAttack = ATTACK_SYNC_TICKS;
+    private static int jumpCooldown;
     private static boolean forcedForward;
 
     private CombatAutomation() {
@@ -69,6 +74,7 @@ public final class CombatAutomation {
         }
         if (target == null) {
             releaseForcedMovement(client);
+            aimReadyTicks = 0;
             return;
         }
 
@@ -85,6 +91,10 @@ public final class CombatAutomation {
         } else {
             releaseForcedMovement(client);
         }
+        if (jumpCooldown > 0) {
+            jumpCooldown--;
+        }
+        ticksSinceAttack++;
         if (player.getAttackStrengthScale(0.0F) < 1.0F) {
             return;
         }
@@ -97,8 +107,13 @@ public final class CombatAutomation {
         if (auraJumpOnly() && !isCriticalWindow(player)) {
             return;
         }
+        if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
+            return;
+        }
+        syncServerRotation(player, target);
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
+        ticksSinceAttack = 0;
     }
 
     private static Entity lockedTarget(Minecraft client, LocalPlayer player) {
@@ -158,8 +173,10 @@ public final class CombatAutomation {
         float currentPitch = player.getXRot();
         float yawDelta = wrapDegrees(yaw - currentYaw);
         float pitchDelta = pitch - currentPitch;
-        float nextYaw = currentYaw + clamp(yawDelta * 0.55F, -MAX_YAW_STEP, MAX_YAW_STEP);
-        float nextPitch = currentPitch + clamp(pitchDelta * 0.55F, -MAX_PITCH_STEP, MAX_PITCH_STEP);
+        float yawFactor = Math.abs(yawDelta) > 18.0F ? 0.82F : 0.64F;
+        float pitchFactor = Math.abs(pitchDelta) > 12.0F ? 0.78F : 0.58F;
+        float nextYaw = currentYaw + clamp(yawDelta * yawFactor, -MAX_YAW_STEP, MAX_YAW_STEP);
+        float nextPitch = currentPitch + clamp(pitchDelta * pitchFactor, -MAX_PITCH_STEP, MAX_PITCH_STEP);
 
         player.setYRot(nextYaw);
         player.setXRot(clamp(nextPitch, -90.0F, 90.0F));
@@ -176,7 +193,7 @@ public final class CombatAutomation {
 
     private static float[] targetRotation(LocalPlayer player, Entity target) {
         Vec3 eyePosition = player.getEyePosition();
-        Vec3 center = hitboxCenter(target);
+        Vec3 center = aimPoint(player, target);
         double dx = center.x - eyePosition.x;
         double dy = center.y - eyePosition.y;
         double dz = center.z - eyePosition.z;
@@ -194,13 +211,19 @@ public final class CombatAutomation {
         } else {
             releaseForcedMovement(client);
         }
-        if (player.onGround()) {
+        if (player.onGround() && jumpCooldown <= 0) {
             player.jumpFromGround();
+            jumpCooldown = LEAP_JUMP_COOLDOWN_TICKS;
         }
     }
 
     private static boolean isCriticalWindow(LocalPlayer player) {
-        return !player.onGround() && player.fallDistance >= CRITICAL_FALL_DISTANCE;
+        return !player.onGround()
+                && player.fallDistance >= CRITICAL_FALL_DISTANCE
+                && !player.isInWater()
+                && !player.isInLava()
+                && !player.onClimbable()
+                && !player.isPassenger();
     }
 
     private static boolean isInAttackReach(LocalPlayer player, Entity target) {
@@ -221,6 +244,33 @@ public final class CombatAutomation {
                 (box.minY + box.maxY) * 0.5D,
                 (box.minZ + box.maxZ) * 0.5D
         );
+    }
+
+    private static Vec3 aimPoint(LocalPlayer player, Entity target) {
+        AABB box = target.getBoundingBox();
+        double x = (box.minX + box.maxX) * 0.5D;
+        double z = (box.minZ + box.maxZ) * 0.5D;
+        double targetY = box.minY + target.getBbHeight() * (target instanceof Player ? 0.62D : 0.54D);
+        double eyeY = player.getEyeY();
+
+        targetY = clamp(targetY, box.minY + 0.12D, box.maxY - 0.08D);
+        if (Math.abs(eyeY - targetY) > 1.4D) {
+            targetY = clamp(eyeY - Math.signum(eyeY - targetY) * 1.1D, box.minY + 0.12D, box.maxY - 0.08D);
+        }
+        return new Vec3(x, targetY, z);
+    }
+
+    private static void syncServerRotation(LocalPlayer player, Entity target) {
+        if (player.connection == null) {
+            return;
+        }
+
+        float[] rotation = targetRotation(player, target);
+        player.setYRot(rotation[0]);
+        player.setXRot(clamp(rotation[1], -90.0F, 90.0F));
+        player.yHeadRot = player.getYRot();
+        player.yBodyRot = player.getYRot();
+        player.connection.send(new ServerboundMovePlayerPacket.Rot(player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
     }
 
     public static boolean isAuraEnabled() {
@@ -313,6 +363,7 @@ public final class CombatAutomation {
     private static void clearLockedTarget() {
         lockedTargetId = -1;
         aimReadyTicks = 0;
+        ticksSinceAttack = ATTACK_SYNC_TICKS;
     }
 
     private static void forceForwardMovement(Minecraft client) {
