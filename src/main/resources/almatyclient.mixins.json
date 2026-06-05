@@ -4,7 +4,6 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "ClientPacketListenerAccessor",
-    "EntityTeamColorMixin",
     "MinecraftUserAccessor",
     "PlayerGameProfileAccessor",
     "PlayerInfoAccessor",

@@ -3,6 +3,7 @@ package com.example.almatyclient;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.api.ClientModInitializer;
@@ -43,13 +44,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ESP_ITEMS_KEY = "esp.items";
     private static final String ESP_NAME_KEY = "esp.name";
     private static final String ESP_HEALTH_KEY = "esp.health";
-    private static final String ENTITY_OVERLAY_KEY = "entityOverlay.enabled";
-    private static final String ENTITY_OVERLAY_PLAYERS_KEY = "entityOverlay.players";
-    private static final String ENTITY_OVERLAY_MOBS_KEY = "entityOverlay.mobs";
-    private static final String ENTITY_OVERLAY_RED_KEY = "entityOverlay.red";
-    private static final String ENTITY_OVERLAY_GREEN_KEY = "entityOverlay.green";
-    private static final String ENTITY_OVERLAY_BLUE_KEY = "entityOverlay.blue";
-    private static final String ENTITY_OVERLAY_WIDTH_KEY = "entityOverlay.width";
+    private static final int ESP_LINE_WIDTH = 2;
 
     private static final RenderPipeline ESP_LINES_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
             .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "esp_lines"))
@@ -196,64 +191,6 @@ public final class AlmatyClient implements ClientModInitializer {
         return ((alpha & 255) << 24) | (guiRed() << 16) | (guiGreen() << 8) | guiBlue();
     }
 
-    public static boolean isEntityOverlayEnabled() {
-        return AlmatyConfig.getBoolean(ENTITY_OVERLAY_KEY, false);
-    }
-
-    public static void setEntityOverlayEnabled(boolean enabled) {
-        AlmatyConfig.setBoolean(ENTITY_OVERLAY_KEY, enabled);
-    }
-
-    public static boolean entityOverlayPlayers() {
-        return AlmatyConfig.getBoolean(ENTITY_OVERLAY_PLAYERS_KEY, true);
-    }
-
-    public static void setEntityOverlayPlayers(boolean enabled) {
-        AlmatyConfig.setBoolean(ENTITY_OVERLAY_PLAYERS_KEY, enabled);
-    }
-
-    public static boolean entityOverlayMobs() {
-        return AlmatyConfig.getBoolean(ENTITY_OVERLAY_MOBS_KEY, true);
-    }
-
-    public static void setEntityOverlayMobs(boolean enabled) {
-        AlmatyConfig.setBoolean(ENTITY_OVERLAY_MOBS_KEY, enabled);
-    }
-
-    public static int entityOverlayRed() {
-        return AlmatyConfig.getInt(ENTITY_OVERLAY_RED_KEY, 70);
-    }
-
-    public static int entityOverlayGreen() {
-        return AlmatyConfig.getInt(ENTITY_OVERLAY_GREEN_KEY, 160);
-    }
-
-    public static int entityOverlayBlue() {
-        return AlmatyConfig.getInt(ENTITY_OVERLAY_BLUE_KEY, 255);
-    }
-
-    public static void setEntityOverlayColor(int red, int green, int blue) {
-        AlmatyConfig.setInt(ENTITY_OVERLAY_RED_KEY, clampColor(red));
-        AlmatyConfig.setInt(ENTITY_OVERLAY_GREEN_KEY, clampColor(green));
-        AlmatyConfig.setInt(ENTITY_OVERLAY_BLUE_KEY, clampColor(blue));
-    }
-
-    public static int entityOverlayColorRgb() {
-        return (entityOverlayRed() << 16) | (entityOverlayGreen() << 8) | entityOverlayBlue();
-    }
-
-    public static int entityOverlayWidth() {
-        return AlmatyConfig.getInt(ENTITY_OVERLAY_WIDTH_KEY, 2);
-    }
-
-    public static void setEntityOverlayWidth(int width) {
-        AlmatyConfig.setInt(ENTITY_OVERLAY_WIDTH_KEY, Math.max(1, Math.min(6, width)));
-    }
-
-    public static boolean shouldUseEntityOverlayColor(Entity entity) {
-        return isEntityOverlayTarget(entity);
-    }
-
     private static void tickAutoSprint(Minecraft client) {
         if (!isAutoSprintEnabled() || client.player == null || client.options == null) {
             releaseForcedSprint(client);
@@ -310,58 +247,45 @@ public final class AlmatyClient implements ClientModInitializer {
         return entity instanceof ItemEntity && espItems();
     }
 
-    private static boolean isEntityOverlayTarget(Entity entity) {
-        Minecraft client = Minecraft.getInstance();
-        if (!isEntityOverlayEnabled() || client.player == null || entity == client.player || !(entity instanceof LivingEntity)) {
-            return false;
-        }
-
-        if (entity instanceof Player) {
-            return entityOverlayPlayers();
-        }
-        return entity instanceof Mob && entityOverlayMobs();
-    }
-
     private static void renderWorldOverlays(WorldRenderContext context) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null || client.player == null || context.matrices() == null || context.consumers() == null) {
             return;
         }
 
-        if (!isEspEnabled() && !isEntityOverlayEnabled()) {
+        if (!isEspEnabled()) {
             return;
         }
 
         PoseStack matrices = context.matrices();
         MultiBufferSource consumers = context.consumers();
         Vec3 camera = context.gameRenderer().getMainCamera().position();
+        boolean drawLabels = espName() || espHealth();
 
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (entity == client.player) {
-                continue;
-            }
+        try (ByteBufferBuilder textBuffer = new ByteBufferBuilder(4096)) {
+            MultiBufferSource.BufferSource textConsumers = MultiBufferSource.immediate(textBuffer);
 
-            boolean espTarget = isEspEnabled() && isEspTarget(entity);
-            boolean overlayTarget = isEntityOverlayTarget(entity);
-            if (!espTarget && !overlayTarget) {
-                continue;
-            }
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (entity == client.player || !isEspTarget(entity)) {
+                    continue;
+                }
 
-            if (espTarget || overlayTarget) {
                 renderBoundingBox(matrices, consumers, entity, camera);
+                if (drawLabels) {
+                    renderNamePlate(client, matrices, textConsumers, entity, camera);
+                }
             }
-            if (espTarget) {
-                renderNamePlate(client, matrices, consumers, entity, camera);
-            }
+
+            textConsumers.endBatch();
         }
     }
 
     private static void renderBoundingBox(PoseStack matrices, MultiBufferSource consumers, Entity entity, Vec3 camera) {
         AABB box = entity.getBoundingBox().move(-camera.x, -camera.y, -camera.z);
-        int red = entityOverlayRed();
-        int green = entityOverlayGreen();
-        int blue = entityOverlayBlue();
-        float width = entityOverlayWidth();
+        int red = guiRed();
+        int green = guiGreen();
+        int blue = guiBlue();
+        float width = ESP_LINE_WIDTH;
         VertexConsumer lines = consumers.getBuffer(ESP_LINES);
         PoseStack.Pose pose = matrices.last();
 
