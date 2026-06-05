@@ -1,10 +1,10 @@
 package com.example.almatyclient;
 
-import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
 
 public final class AlmatyClientScreen extends Screen {
     private final Screen parent;
