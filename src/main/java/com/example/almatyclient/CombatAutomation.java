@@ -37,9 +37,6 @@ public final class CombatAutomation {
     private static final float MAX_YAW_STEP = 52.0F;
     private static final float MAX_PITCH_STEP = 38.0F;
     private static final float AIM_TOLERANCE = 2.8F;
-    private static final float SILENT_MAX_YAW_STEP = 24.0F;
-    private static final float SILENT_MAX_PITCH_STEP = 18.0F;
-    private static final float SILENT_AIM_TOLERANCE = 3.2F;
     private static final int REQUIRED_AIM_READY_TICKS = 1;
     private static final int ATTACK_SYNC_TICKS = 3;
     private static final int LEAP_JUMP_COOLDOWN_TICKS = 5;
@@ -48,9 +45,7 @@ public final class CombatAutomation {
     private static int aimReadyTicks;
     private static int ticksSinceAttack = ATTACK_SYNC_TICKS;
     private static int jumpCooldown;
-    private static float silentServerYaw;
-    private static float silentServerPitch;
-    private static boolean silentAimInitialized;
+    private static boolean restoreServerRotationNextTick;
     private static boolean forcedForward;
 
     private CombatAutomation() {
@@ -62,17 +57,20 @@ public final class CombatAutomation {
 
     private static void tick(Minecraft client) {
         if (!isAuraEnabled()) {
+            restoreServerRotation(client);
             clearLockedTarget();
             releaseForcedMovement(client);
             return;
         }
         if (client.level == null || client.player == null || client.gameMode == null) {
+            restoreServerRotation(client);
             clearLockedTarget();
             releaseForcedMovement(client);
             return;
         }
 
         LocalPlayer player = client.player;
+        restoreServerRotation(player);
         Entity target = lockedTarget(client, player);
         if (target == null) {
             target = findTarget(client, player);
@@ -84,16 +82,12 @@ public final class CombatAutomation {
             return;
         }
 
-        boolean serverAimReady = true;
         if (auraRotate()) {
-            silentAimInitialized = false;
             smoothRotateToTarget(player, target);
             if (!isAimReady(player, target)) {
                 aimReadyTicks = 0;
                 return;
             }
-        } else {
-            serverAimReady = updateSilentServerAim(player, target);
         }
         aimReadyTicks++;
         if (auraJumpOnly() && auraMoveMode() == MOVE_LEAP_IN) {
@@ -111,9 +105,6 @@ public final class CombatAutomation {
         if (aimReadyTicks < REQUIRED_AIM_READY_TICKS) {
             return;
         }
-        if (!serverAimReady) {
-            return;
-        }
         if (!isInAttackReach(player, target)) {
             return;
         }
@@ -123,9 +114,7 @@ public final class CombatAutomation {
         if (ticksSinceAttack < ATTACK_SYNC_TICKS) {
             return;
         }
-        if (auraRotate()) {
-            syncAttackRotation(player, target);
-        }
+        syncAttackRotation(player, target, auraRotate());
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
@@ -285,41 +274,36 @@ public final class CombatAutomation {
         player.yBodyRot = yaw;
     }
 
-    private static void syncAttackRotation(LocalPlayer player, Entity target) {
+    private static void syncAttackRotation(LocalPlayer player, Entity target, boolean applyVisualRotation) {
         float[] rotation = targetRotation(player, target);
         float yaw = rotation[0];
         float pitch = clamp(rotation[1], -90.0F, 90.0F);
-        player.setYRot(yaw);
-        player.setXRot(pitch);
-        player.yHeadRot = yaw;
-        player.yBodyRot = yaw;
+        if (applyVisualRotation) {
+            player.setYRot(yaw);
+            player.setXRot(pitch);
+            player.yHeadRot = yaw;
+            player.yBodyRot = yaw;
+        } else {
+            restoreServerRotationNextTick = true;
+        }
         if (player.connection != null) {
             player.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, player.onGround(), player.horizontalCollision));
         }
     }
 
-    private static boolean updateSilentServerAim(LocalPlayer player, Entity target) {
-        if (player.connection == null) {
-            return false;
+    private static void restoreServerRotation(Minecraft client) {
+        if (client != null && client.player != null) {
+            restoreServerRotation(client.player);
         }
-        if (!silentAimInitialized) {
-            silentServerYaw = player.getYRot();
-            silentServerPitch = player.getXRot();
-            silentAimInitialized = true;
+    }
+
+    private static void restoreServerRotation(LocalPlayer player) {
+        if (!restoreServerRotationNextTick || player.connection == null) {
+            return;
         }
 
-        float[] rotation = targetRotation(player, target);
-        float targetYaw = rotation[0];
-        float targetPitch = clamp(rotation[1], -90.0F, 90.0F);
-        float yawDelta = wrapDegrees(targetYaw - silentServerYaw);
-        float pitchDelta = targetPitch - silentServerPitch;
-
-        silentServerYaw += clamp(yawDelta, -SILENT_MAX_YAW_STEP, SILENT_MAX_YAW_STEP);
-        silentServerPitch = clamp(silentServerPitch + clamp(pitchDelta, -SILENT_MAX_PITCH_STEP, SILENT_MAX_PITCH_STEP), -90.0F, 90.0F);
-        player.connection.send(new ServerboundMovePlayerPacket.Rot(silentServerYaw, silentServerPitch, player.onGround(), player.horizontalCollision));
-
-        return Math.abs(wrapDegrees(targetYaw - silentServerYaw)) <= SILENT_AIM_TOLERANCE
-                && Math.abs(targetPitch - silentServerPitch) <= SILENT_AIM_TOLERANCE;
+        player.connection.send(new ServerboundMovePlayerPacket.Rot(player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
+        restoreServerRotationNextTick = false;
     }
 
     public static boolean isAuraEnabled() {
@@ -413,7 +397,7 @@ public final class CombatAutomation {
         lockedTargetId = -1;
         aimReadyTicks = 0;
         ticksSinceAttack = ATTACK_SYNC_TICKS;
-        silentAimInitialized = false;
+        restoreServerRotationNextTick = false;
     }
 
     private static void forceForwardMovement(Minecraft client) {
