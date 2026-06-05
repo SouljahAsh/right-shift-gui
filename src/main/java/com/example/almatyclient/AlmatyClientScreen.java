@@ -51,7 +51,7 @@ public final class AlmatyClientScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-        this.renderBackground(graphics, mouseX, mouseY, delta);
+        graphics.fill(0, 0, this.width, this.height, 0x99000000);
 
         float progress = Math.min(1.0F, (Util.getMillis() - this.openedAt) / 180.0F);
         float eased = 1.0F - (1.0F - progress) * (1.0F - progress);
