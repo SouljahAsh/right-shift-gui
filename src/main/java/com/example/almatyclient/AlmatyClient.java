@@ -3,7 +3,6 @@ package com.example.almatyclient;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.api.ClientModInitializer;
@@ -12,10 +11,8 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
@@ -33,6 +30,11 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 public final class AlmatyClient implements ClientModInitializer {
     public static final String MOD_ID = "almatyclient";
 
@@ -45,6 +47,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ESP_NAME_KEY = "esp.name";
     private static final String ESP_HEALTH_KEY = "esp.health";
     private static final int ESP_LINE_WIDTH = 2;
+    private static final int AUTO_SPRINT_DELAY_TICKS = 4;
 
     private static final RenderPipeline ESP_LINES_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
             .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "esp_lines"))
@@ -59,6 +62,8 @@ public final class AlmatyClient implements ClientModInitializer {
     );
 
     private static boolean sprintKeyForced;
+    private static int forwardTicks;
+    private static final Map<Integer, NameState> FORCED_NAMES = new HashMap<>();
 
     private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
             Identifier.fromNamespaceAndPath(MOD_ID, "controls")
@@ -86,6 +91,7 @@ public final class AlmatyClient implements ClientModInitializer {
             }
 
             tickAutoSprint(client);
+            tickEspLabels(client);
         });
 
         WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
@@ -127,6 +133,9 @@ public final class AlmatyClient implements ClientModInitializer {
 
     public static void setEspEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(ESP_KEY, enabled);
+        if (!enabled) {
+            clearEspLabels(Minecraft.getInstance());
+        }
     }
 
     public static boolean espPlayers() {
@@ -194,6 +203,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static void tickAutoSprint(Minecraft client) {
         if (!isAutoSprintEnabled() || client.player == null || client.options == null) {
             releaseForcedSprint(client);
+            forwardTicks = 0;
             return;
         }
 
@@ -201,13 +211,19 @@ public final class AlmatyClient implements ClientModInitializer {
         boolean blocked = client.player.isCrouching()
                 || client.player.isUsingItem()
                 || client.player.isPassenger()
-                || client.player.horizontalCollision;
+                || client.player.horizontalCollision
+                || !client.player.onGround()
+                || client.player.getFoodData().getFoodLevel() <= 6;
 
         if (walkingForward && !blocked) {
+            forwardTicks++;
+        } else {
+            forwardTicks = 0;
+        }
+
+        if (forwardTicks >= AUTO_SPRINT_DELAY_TICKS) {
             client.options.keySprint.setDown(true);
             sprintKeyForced = true;
-            client.player.setSprinting(true);
-            smoothSprintMovement(client);
         } else {
             releaseForcedSprint(client);
         }
@@ -220,23 +236,6 @@ public final class AlmatyClient implements ClientModInitializer {
         }
     }
 
-    private static void smoothSprintMovement(Minecraft client) {
-        if (client.player == null || !client.player.onGround()) {
-            return;
-        }
-
-        Vec3 velocity = client.player.getDeltaMovement();
-        double horizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-        if (horizontalSpeed <= 0.035D || horizontalSpeed >= 0.295D) {
-            return;
-        }
-
-        double target = 0.295D;
-        double blend = 0.11D;
-        double factor = 1.0D + ((target - horizontalSpeed) / target) * blend;
-        client.player.setDeltaMovement(velocity.x * factor, velocity.y, velocity.z * factor);
-    }
-
     private static boolean isEspTarget(Entity entity) {
         if (entity instanceof Player) {
             return espPlayers();
@@ -245,6 +244,78 @@ public final class AlmatyClient implements ClientModInitializer {
             return espMobs();
         }
         return entity instanceof ItemEntity && espItems();
+    }
+
+    private static boolean isEspLabelTarget(Entity entity) {
+        return entity instanceof LivingEntity && isEspTarget(entity) && !(entity instanceof ItemEntity);
+    }
+
+    private static void tickEspLabels(Minecraft client) {
+        if (client.level == null || client.player == null || !isEspEnabled() || (!espName() && !espHealth())) {
+            clearEspLabels(client);
+            return;
+        }
+
+        Set<Integer> active = new HashSet<>();
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (entity == client.player || !isEspLabelTarget(entity)) {
+                continue;
+            }
+
+            LivingEntity living = (LivingEntity) entity;
+            String label = entityLabel(entity, living);
+            active.add(entity.getId());
+            applyEspLabel(entity, label);
+        }
+
+        FORCED_NAMES.keySet().removeIf(id -> {
+            if (active.contains(id)) {
+                return false;
+            }
+
+            Entity entity = client.level.getEntity(id);
+            if (entity != null) {
+                restoreNamePlate(entity);
+            }
+            return true;
+        });
+    }
+
+    private static void applyEspLabel(Entity entity, String label) {
+        NameState state = FORCED_NAMES.get(entity.getId());
+        if (state == null) {
+            state = new NameState(entity.getCustomName(), entity.isCustomNameVisible(), "");
+            FORCED_NAMES.put(entity.getId(), state);
+        }
+
+        if (label.equals(state.lastLabel())) {
+            return;
+        }
+
+        entity.setCustomName(Component.literal(label));
+        entity.setCustomNameVisible(true);
+        FORCED_NAMES.put(entity.getId(), new NameState(state.originalName(), state.originalVisible(), label));
+    }
+
+    private static void restoreNamePlate(Entity entity) {
+        NameState state = FORCED_NAMES.remove(entity.getId());
+        if (state == null) {
+            return;
+        }
+
+        entity.setCustomName(state.originalName());
+        entity.setCustomNameVisible(state.originalVisible());
+    }
+
+    private static void clearEspLabels(Minecraft client) {
+        if (client.level != null) {
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (FORCED_NAMES.containsKey(entity.getId())) {
+                    restoreNamePlate(entity);
+                }
+            }
+        }
+        FORCED_NAMES.clear();
     }
 
     private static void renderWorldOverlays(WorldRenderContext context) {
@@ -260,23 +331,13 @@ public final class AlmatyClient implements ClientModInitializer {
         PoseStack matrices = context.matrices();
         MultiBufferSource consumers = context.consumers();
         Vec3 camera = context.gameRenderer().getMainCamera().position();
-        boolean drawLabels = espName() || espHealth();
 
-        try (ByteBufferBuilder textBuffer = new ByteBufferBuilder(4096)) {
-            MultiBufferSource.BufferSource textConsumers = MultiBufferSource.immediate(textBuffer);
-
-            for (Entity entity : client.level.entitiesForRendering()) {
-                if (entity == client.player || !isEspTarget(entity)) {
-                    continue;
-                }
-
-                renderBoundingBox(matrices, consumers, entity, camera);
-                if (drawLabels) {
-                    renderNamePlate(client, matrices, textConsumers, entity, camera);
-                }
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (entity == client.player || !isEspTarget(entity)) {
+                continue;
             }
 
-            textConsumers.endBatch();
+            renderBoundingBox(matrices, consumers, entity, camera);
         }
     }
 
@@ -319,29 +380,10 @@ public final class AlmatyClient implements ClientModInitializer {
                 .setLineWidth(width);
     }
 
-    private static void renderNamePlate(Minecraft client, PoseStack matrices, MultiBufferSource consumers, Entity entity, Vec3 camera) {
-        if (!(entity instanceof LivingEntity living) || (!espName() && !espHealth())) {
-            return;
-        }
-
-        Component label = Component.literal(entityLabel(entity, living));
-        Font font = client.font;
-
-        matrices.pushPose();
-        matrices.translate(entity.getX() - camera.x, entity.getY() - camera.y + entity.getBbHeight() + 0.55D, entity.getZ() - camera.z);
-        matrices.mulPose(client.getEntityRenderDispatcher().camera.rotation());
-        matrices.scale(-0.025F, -0.025F, 0.025F);
-
-        float x = -font.width(label) / 2.0F;
-        font.drawInBatch(label, x, 0.0F, 0xFFFFFFFF, false, matrices.last().pose(), consumers, Font.DisplayMode.SEE_THROUGH, 0x66000000, LightTexture.FULL_BRIGHT);
-        font.drawInBatch(label, x, 0.0F, 0xFFFFFFFF, false, matrices.last().pose(), consumers, Font.DisplayMode.NORMAL, 0, LightTexture.FULL_BRIGHT);
-        matrices.popPose();
-    }
-
     private static String entityLabel(Entity entity, LivingEntity living) {
         StringBuilder text = new StringBuilder();
         if (espName()) {
-            text.append(entity.getName().getString());
+            text.append(entityDisplayName(entity));
         }
         if (espHealth()) {
             if (!text.isEmpty()) {
@@ -350,6 +392,24 @@ public final class AlmatyClient implements ClientModInitializer {
             text.append("HP: ").append(Math.round(living.getHealth()));
         }
         return text.toString();
+    }
+
+    private static String entityDisplayName(Entity entity) {
+        NameState state = FORCED_NAMES.get(entity.getId());
+        if (state != null && state.originalName() != null) {
+            return state.originalName().getString();
+        }
+
+        Component customName = entity.getCustomName();
+        if (customName != null) {
+            return customName.getString();
+        }
+
+        if (entity instanceof Player player) {
+            return player.getPlainTextName();
+        }
+
+        return entity.getType().getDescription().getString();
     }
 
     private static void spawnWaterBubbles(LivingEntity entity) {
@@ -380,5 +440,8 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static int clampColor(int value) {
         return Math.max(0, Math.min(255, value));
+    }
+
+    private record NameState(Component originalName, boolean originalVisible, String lastLabel) {
     }
 }

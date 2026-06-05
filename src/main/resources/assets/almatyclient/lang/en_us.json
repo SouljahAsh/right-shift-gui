@@ -8,6 +8,7 @@
   "screen.almatyclient.autosprint.status": "Auto Sprint %s",
   "screen.almatyclient.autosprint.hint": "Hold W to sprint automatically",
   "screen.almatyclient.alt_manager": "Alt Manager",
+  "screen.almatyclient.changelogs": "Changelogs",
   "screen.almatyclient.alt_manager.title": "Alt Manager",
   "screen.almatyclient.alt_manager.tab.add": "Add Alt",
   "screen.almatyclient.alt_manager.tab.saved": "Saved Alts",

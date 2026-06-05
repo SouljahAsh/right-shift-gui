@@ -1,6 +1,7 @@
 package com.example.almatyclient.mixin;
 
 import com.example.almatyclient.AltManagerScreen;
+import com.example.almatyclient.ChangelogScreen;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.LogoRenderer;
@@ -36,6 +37,15 @@ public abstract class TitleScreenMixin extends Screen {
                     }
                 }
         ).bounds(buttonX, y, buttonWidth, 20).build());
+
+        this.addRenderableWidget(Button.builder(
+                Component.translatable("screen.almatyclient.changelogs"),
+                button -> {
+                    if (this.minecraft != null) {
+                        this.minecraft.setScreen(new ChangelogScreen(this));
+                    }
+                }
+        ).bounds(buttonX, Math.max(4, y - 24), buttonWidth, 20).build());
     }
 
     @Redirect(

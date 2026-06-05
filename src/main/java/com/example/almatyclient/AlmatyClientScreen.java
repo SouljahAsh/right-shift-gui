@@ -124,6 +124,11 @@ public final class AlmatyClientScreen extends Screen {
             return true;
         }
 
+        if (this.activeTab == Tab.OTHER && inRow(mouseX, mouseY, 3)) {
+            resetPanel();
+            return true;
+        }
+
         if (this.activeTab == Tab.VISUALS && inRow(mouseX, mouseY, 0)) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
                 this.particlesSettingsOpen = !this.particlesSettingsOpen;
@@ -267,6 +272,7 @@ public final class AlmatyClientScreen extends Screen {
             drawColorSlider(graphics, x + 12, y + 82, w - 24, "Red", AlmatyClient.guiRed(), 0);
             drawColorSlider(graphics, x + 12, y + 120, w - 24, "Green", AlmatyClient.guiGreen(), 1);
             drawColorSlider(graphics, x + 12, y + 158, w - 24, "Blue", AlmatyClient.guiBlue(), 2);
+            drawActionRow(graphics, x + 12, y + 198, w - 24, "Reset GUI", "Restore window size");
         } else if (this.activeTab == Tab.VISUALS) {
             drawFeatureRow(graphics, x + 12, y + 82, w - 24, "Particles", AlmatyClient.isParticlesEnabled());
             if (this.particlesSettingsOpen) {
@@ -287,6 +293,13 @@ public final class AlmatyClientScreen extends Screen {
         drawStringFit(graphics, title, x + 12, y + 7, Math.max(24, w - 66), 0xFFFFFFFF);
         drawStringFit(graphics, "RMB settings", x + 12, y + 19, Math.max(24, w - 66), 0xFF98A8C4);
         drawToggle(graphics, x + w - 42, y + 9, enabled);
+    }
+
+    private void drawActionRow(GuiGraphics graphics, int x, int y, int w, String title, String hint) {
+        graphics.fill(x, y, x + w, y + 34, 0x66111824);
+        graphics.fill(x, y, x + 2, y + 34, AlmatyClient.accentColor(210));
+        drawStringFit(graphics, title, x + 12, y + 7, Math.max(24, w - 24), 0xFFFFFFFF);
+        drawStringFit(graphics, hint, x + 12, y + 19, Math.max(24, w - 24), 0xFF98A8C4);
     }
 
     private void drawColorSlider(GuiGraphics graphics, int x, int y, int w, String label, int value, int index) {
@@ -561,6 +574,15 @@ public final class AlmatyClientScreen extends Screen {
         AlmatyConfig.setInt("gui.width", this.panelWidth);
         AlmatyConfig.setInt("gui.height", this.panelHeight);
         saveSelectedTab();
+    }
+
+    private void resetPanel() {
+        this.panelWidth = 430;
+        this.panelHeight = 270;
+        this.panelX = this.width / 2 - this.panelWidth / 2;
+        this.panelY = this.height / 2 - this.panelHeight / 2;
+        clampPanelToScreen();
+        savePanel();
     }
 
     private void saveSelectedTab() {
