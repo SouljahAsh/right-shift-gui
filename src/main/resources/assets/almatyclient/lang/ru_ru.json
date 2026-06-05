@@ -7,5 +7,17 @@
   "screen.almatyclient.autosprint.disabled": "Авто-спринт: ВЫКЛ",
   "screen.almatyclient.autosprint.status": "Авто-спринт %s",
   "screen.almatyclient.autosprint.hint": "Зажми W, чтобы сразу бежать",
+  "screen.almatyclient.alt_manager": "Alt Manager",
+  "screen.almatyclient.alt_manager.title": "Alt Manager",
+  "screen.almatyclient.alt_manager.tab.add": "Добавить",
+  "screen.almatyclient.alt_manager.tab.saved": "Сохранённые",
+  "screen.almatyclient.alt_manager.nick": "Ник",
+  "screen.almatyclient.alt_manager.nick_hint": "Введи ник",
+  "screen.almatyclient.alt_manager.save": "Сохранить",
+  "screen.almatyclient.alt_manager.random": "Случайный",
+  "screen.almatyclient.alt_manager.back": "Назад",
+  "screen.almatyclient.alt_manager.empty": "Сохранённых ников нет",
+  "screen.almatyclient.alt_manager.selected": "Выбран: %s",
+  "screen.almatyclient.alt_manager.selected.none": "Выбран: нет",
   "screen.almatyclient.close": "Закрыть"
 }

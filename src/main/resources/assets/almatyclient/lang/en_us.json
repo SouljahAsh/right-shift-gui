@@ -7,5 +7,17 @@
   "screen.almatyclient.autosprint.disabled": "Auto Sprint: OFF",
   "screen.almatyclient.autosprint.status": "Auto Sprint %s",
   "screen.almatyclient.autosprint.hint": "Hold W to sprint automatically",
+  "screen.almatyclient.alt_manager": "Alt Manager",
+  "screen.almatyclient.alt_manager.title": "Alt Manager",
+  "screen.almatyclient.alt_manager.tab.add": "Add Alt",
+  "screen.almatyclient.alt_manager.tab.saved": "Saved Alts",
+  "screen.almatyclient.alt_manager.nick": "Nickname",
+  "screen.almatyclient.alt_manager.nick_hint": "Enter nickname",
+  "screen.almatyclient.alt_manager.save": "Save",
+  "screen.almatyclient.alt_manager.random": "Random",
+  "screen.almatyclient.alt_manager.back": "Back",
+  "screen.almatyclient.alt_manager.empty": "No saved nicknames",
+  "screen.almatyclient.alt_manager.selected": "Selected: %s",
+  "screen.almatyclient.alt_manager.selected.none": "Selected: none",
   "screen.almatyclient.close": "Close"
 }
