@@ -1,0 +1,72 @@
+package com.example.almatyclient;
+
+public enum ClientModule {
+    SPRINT("sprint", "Sprint") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isAutoSprintEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setAutoSprintEnabled(enabled);
+        }
+    },
+    AURA("aura", "Aura") {
+        @Override
+        public boolean isEnabled() {
+            return CombatAutomation.isAuraEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            CombatAutomation.setAuraEnabled(enabled);
+        }
+    },
+    PARTICLES("particles", "Particles") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isParticlesEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setParticlesEnabled(enabled);
+        }
+    },
+    ESP("esp", "ESP") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isEspEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setEspEnabled(enabled);
+        }
+    };
+
+    private final String id;
+    private final String title;
+
+    ClientModule(String id, String title) {
+        this.id = id;
+        this.title = title;
+    }
+
+    public String id() {
+        return this.id;
+    }
+
+    public String title() {
+        return this.title;
+    }
+
+    public void toggle() {
+        setEnabled(!isEnabled());
+    }
+
+    public abstract boolean isEnabled();
+
+    public abstract void setEnabled(boolean enabled);
+}

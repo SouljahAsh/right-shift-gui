@@ -5,6 +5,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
+import org.lwjgl.glfw.GLFW;
 
 public final class AlmatyClientScreen extends Screen {
     private static final int MIN_PANEL_WIDTH = 720;
@@ -94,6 +95,10 @@ public final class AlmatyClientScreen extends Screen {
         double physicalMouseY = event.y();
         double mouseX = toLogicalX(physicalMouseX);
         double mouseY = toLogicalY(physicalMouseY);
+
+        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && openBindSelection(mouseX, mouseY)) {
+            return true;
+        }
 
         this.resizeMode = findResizeMode(physicalMouseX, physicalMouseY);
         if (this.resizeMode != 0) {
@@ -486,6 +491,43 @@ public final class AlmatyClientScreen extends Screen {
         }
 
         return false;
+    }
+
+    private boolean openBindSelection(double mouseX, double mouseY) {
+        ClientModule module = moduleAt(mouseX, mouseY);
+        if (module == null || this.minecraft == null) {
+            return false;
+        }
+
+        this.minecraft.setScreen(new BindSelectionScreen(this, module));
+        return true;
+    }
+
+    private ClientModule moduleAt(double mouseX, double mouseY) {
+        if (!inside(mouseX, mouseY, contentViewportX(), contentViewportY(), contentViewportWidth(), contentViewportHeight())) {
+            return null;
+        }
+
+        int y = (int) Math.round(mouseY + this.contentScroll);
+        boolean moduleCard = inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70);
+        boolean detailHeader = inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90);
+        if (!moduleCard && !detailHeader) {
+            return null;
+        }
+
+        if (this.activeTab == Tab.MOVEMENT) {
+            return ClientModule.SPRINT;
+        }
+        if (this.activeTab == Tab.COMBAT) {
+            return ClientModule.AURA;
+        }
+        if (this.activeTab == Tab.VISUALS) {
+            return ClientModule.PARTICLES;
+        }
+        if (this.activeTab == Tab.PLAYERS) {
+            return ClientModule.ESP;
+        }
+        return null;
     }
 
     private boolean clickSprintDetail(double mouseX, int y) {

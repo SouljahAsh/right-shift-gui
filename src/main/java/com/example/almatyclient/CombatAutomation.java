@@ -28,13 +28,19 @@ public final class CombatAutomation {
     private static final int MOVE_LEAP_IN = 1;
     private static final int TARGET_NEAREST = 0;
     private static final int TARGET_LOWEST_HEALTH = 1;
-    private static final double LEAP_SPEED = 0.28D;
+    private static final double ATTACK_REACH = 3.0D;
+    private static final double ATTACK_REACH_SQ = ATTACK_REACH * ATTACK_REACH;
+    private static final double LEAP_STOP_DISTANCE = 2.75D;
+    private static final double LEAP_STOP_DISTANCE_SQ = LEAP_STOP_DISTANCE * LEAP_STOP_DISTANCE;
     private static final float CRITICAL_FALL_DISTANCE = 0.08F;
-    private static final float MAX_YAW_STEP = 10.0F;
-    private static final float MAX_PITCH_STEP = 8.0F;
-    private static final float AIM_TOLERANCE = 2.5F;
+    private static final float MAX_YAW_STEP = 32.0F;
+    private static final float MAX_PITCH_STEP = 24.0F;
+    private static final float AIM_TOLERANCE = 1.5F;
+    private static final int REQUIRED_AIM_READY_TICKS = 2;
 
     private static int lockedTargetId = -1;
+    private static int aimReadyTicks;
+    private static boolean forcedForward;
 
     private CombatAutomation() {
     }
@@ -46,10 +52,12 @@ public final class CombatAutomation {
     private static void tick(Minecraft client) {
         if (!isAuraEnabled()) {
             clearLockedTarget();
+            releaseForcedMovement(client);
             return;
         }
         if (client.level == null || client.player == null || client.gameMode == null) {
             clearLockedTarget();
+            releaseForcedMovement(client);
             return;
         }
 
@@ -60,19 +68,30 @@ public final class CombatAutomation {
             lockedTargetId = target == null ? -1 : target.getId();
         }
         if (target == null) {
+            releaseForcedMovement(client);
             return;
         }
 
         if (auraRotate()) {
             smoothRotateToTarget(player, target);
             if (!isAimReady(player, target)) {
+                aimReadyTicks = 0;
                 return;
             }
         }
+        aimReadyTicks++;
         if (auraJumpOnly() && auraMoveMode() == MOVE_LEAP_IN) {
-            leapTowardTarget(player, target);
+            leapTowardTarget(client, player, target);
+        } else {
+            releaseForcedMovement(client);
         }
         if (player.getAttackStrengthScale(0.0F) < 1.0F) {
+            return;
+        }
+        if (aimReadyTicks < REQUIRED_AIM_READY_TICKS) {
+            return;
+        }
+        if (!isInAttackReach(player, target)) {
             return;
         }
         if (auraJumpOnly() && !isCriticalWindow(player)) {
@@ -137,8 +156,10 @@ public final class CombatAutomation {
         float pitch = rotation[1];
         float currentYaw = player.getYRot();
         float currentPitch = player.getXRot();
-        float nextYaw = currentYaw + clamp(wrapDegrees(yaw - currentYaw), -MAX_YAW_STEP, MAX_YAW_STEP);
-        float nextPitch = currentPitch + clamp(pitch - currentPitch, -MAX_PITCH_STEP, MAX_PITCH_STEP);
+        float yawDelta = wrapDegrees(yaw - currentYaw);
+        float pitchDelta = pitch - currentPitch;
+        float nextYaw = currentYaw + clamp(yawDelta * 0.55F, -MAX_YAW_STEP, MAX_YAW_STEP);
+        float nextPitch = currentPitch + clamp(pitchDelta * 0.55F, -MAX_PITCH_STEP, MAX_PITCH_STEP);
 
         player.setYRot(nextYaw);
         player.setXRot(clamp(nextPitch, -90.0F, 90.0F));
@@ -166,13 +187,12 @@ public final class CombatAutomation {
         return new float[]{yaw, pitch};
     }
 
-    private static void leapTowardTarget(LocalPlayer player, Entity target) {
-        Vec3 center = hitboxCenter(target);
-        Vec3 direction = new Vec3(center.x - player.getX(), 0.0D, center.z - player.getZ());
-        if (direction.lengthSqr() > 0.0001D) {
-            direction = direction.normalize().scale(LEAP_SPEED);
-            Vec3 velocity = player.getDeltaMovement();
-            player.setDeltaMovement(direction.x, velocity.y, direction.z);
+    private static void leapTowardTarget(Minecraft client, LocalPlayer player, Entity target) {
+        double distanceSq = distanceToHitboxSqr(player.getEyePosition(), target.getBoundingBox());
+        if (distanceSq > LEAP_STOP_DISTANCE_SQ) {
+            forceForwardMovement(client);
+        } else {
+            releaseForcedMovement(client);
         }
         if (player.onGround()) {
             player.jumpFromGround();
@@ -181,6 +201,10 @@ public final class CombatAutomation {
 
     private static boolean isCriticalWindow(LocalPlayer player) {
         return !player.onGround() && player.fallDistance >= CRITICAL_FALL_DISTANCE;
+    }
+
+    private static boolean isInAttackReach(LocalPlayer player, Entity target) {
+        return distanceToHitboxSqr(player.getEyePosition(), target.getBoundingBox()) <= ATTACK_REACH_SQ;
     }
 
     private static double targetScore(Entity entity, double distanceSq) {
@@ -206,6 +230,9 @@ public final class CombatAutomation {
     public static void setAuraEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(AURA_ENABLED_KEY, enabled);
         clearLockedTarget();
+        if (!enabled) {
+            releaseForcedMovement(Minecraft.getInstance());
+        }
     }
 
     public static double auraRange() {
@@ -285,6 +312,32 @@ public final class CombatAutomation {
 
     private static void clearLockedTarget() {
         lockedTargetId = -1;
+        aimReadyTicks = 0;
+    }
+
+    private static void forceForwardMovement(Minecraft client) {
+        if (client.options == null || client.options.keyUp.isDown()) {
+            return;
+        }
+        client.options.keyUp.setDown(true);
+        forcedForward = true;
+    }
+
+    private static void releaseForcedMovement(Minecraft client) {
+        if (forcedForward && client.options != null) {
+            client.options.keyUp.setDown(false);
+        }
+        forcedForward = false;
+    }
+
+    private static double distanceToHitboxSqr(Vec3 point, AABB box) {
+        double x = clamp(point.x, box.minX, box.maxX);
+        double y = clamp(point.y, box.minY, box.maxY);
+        double z = clamp(point.z, box.minZ, box.maxZ);
+        double dx = point.x - x;
+        double dy = point.y - y;
+        double dz = point.z - z;
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private static float wrapDegrees(float value) {
@@ -299,6 +352,10 @@ public final class CombatAutomation {
     }
 
     private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
 }
