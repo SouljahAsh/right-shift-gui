@@ -34,9 +34,15 @@ public final class AlmatyClientScreen extends Screen {
     private int panelY;
     private int panelWidth = 430;
     private int panelHeight = 270;
+    private int resizeStartPanelX;
+    private int resizeStartPanelY;
+    private int resizeStartPanelWidth;
+    private int resizeStartPanelHeight;
     private long closingAt;
     private double lastMouseX;
     private double lastMouseY;
+    private double resizeStartMouseX;
+    private double resizeStartMouseY;
     private double dragOffsetX;
     private double dragOffsetY;
 
@@ -84,6 +90,12 @@ public final class AlmatyClientScreen extends Screen {
         if (this.resizeMode != 0) {
             this.lastMouseX = mouseX;
             this.lastMouseY = mouseY;
+            this.resizeStartMouseX = mouseX;
+            this.resizeStartMouseY = mouseY;
+            this.resizeStartPanelX = this.panelX;
+            this.resizeStartPanelY = this.panelY;
+            this.resizeStartPanelWidth = this.panelWidth;
+            this.resizeStartPanelHeight = this.panelHeight;
             return true;
         }
 
@@ -180,11 +192,8 @@ public final class AlmatyClientScreen extends Screen {
             return true;
         }
 
-        int dx = (int) Math.round(event.x() - this.lastMouseX);
-        int dy = (int) Math.round(event.y() - this.lastMouseY);
-
         if (this.resizeMode != 0) {
-            resizePanel(dx, dy);
+            resizePanel(event.x(), event.y());
             this.lastMouseX = event.x();
             this.lastMouseY = event.y();
             return true;
@@ -611,11 +620,15 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int findResizeMode(double mouseX, double mouseY) {
-        boolean left = mouseX >= this.panelX - RESIZE_HANDLE && mouseX <= this.panelX + RESIZE_HANDLE;
-        boolean right = mouseX >= this.panelX + this.panelWidth - RESIZE_HANDLE
+        boolean inVerticalRange = mouseY >= this.panelY - RESIZE_HANDLE
+                && mouseY <= this.panelY + this.panelHeight + RESIZE_HANDLE;
+        boolean inHorizontalRange = mouseX >= this.panelX - RESIZE_HANDLE
                 && mouseX <= this.panelX + this.panelWidth + RESIZE_HANDLE;
-        boolean top = mouseY >= this.panelY - RESIZE_HANDLE && mouseY <= this.panelY + RESIZE_HANDLE;
-        boolean bottom = mouseY >= this.panelY + this.panelHeight - RESIZE_HANDLE
+        boolean left = inVerticalRange && mouseX >= this.panelX - RESIZE_HANDLE && mouseX <= this.panelX + RESIZE_HANDLE;
+        boolean right = inVerticalRange && mouseX >= this.panelX + this.panelWidth - RESIZE_HANDLE
+                && mouseX <= this.panelX + this.panelWidth + RESIZE_HANDLE;
+        boolean top = inHorizontalRange && mouseY >= this.panelY - RESIZE_HANDLE && mouseY <= this.panelY + RESIZE_HANDLE;
+        boolean bottom = inHorizontalRange && mouseY >= this.panelY + this.panelHeight - RESIZE_HANDLE
                 && mouseY <= this.panelY + this.panelHeight + RESIZE_HANDLE;
 
         int mode = 0;
@@ -634,27 +647,36 @@ public final class AlmatyClientScreen extends Screen {
         return mode;
     }
 
-    private void resizePanel(int dx, int dy) {
+    private void resizePanel(double mouseX, double mouseY) {
+        int dx = (int) Math.round(mouseX - this.resizeStartMouseX);
+        int dy = (int) Math.round(mouseY - this.resizeStartMouseY);
+        int x = this.resizeStartPanelX;
+        int y = this.resizeStartPanelY;
+        int width = this.resizeStartPanelWidth;
+        int height = this.resizeStartPanelHeight;
+
         if ((this.resizeMode & RESIZE_LEFT) != 0) {
-            int newWidth = this.panelWidth - dx;
-            if (newWidth >= MIN_PANEL_WIDTH) {
-                this.panelX += dx;
-                this.panelWidth = newWidth;
-            }
+            int fixedRight = this.resizeStartPanelX + this.resizeStartPanelWidth;
+            x = Math.max(6, Math.min(this.resizeStartPanelX + dx, fixedRight - MIN_PANEL_WIDTH));
+            width = fixedRight - x;
+        } else if ((this.resizeMode & RESIZE_RIGHT) != 0) {
+            int right = Math.min(this.width - 6, Math.max(this.resizeStartPanelX + MIN_PANEL_WIDTH, this.resizeStartPanelX + this.resizeStartPanelWidth + dx));
+            width = right - this.resizeStartPanelX;
         }
-        if ((this.resizeMode & RESIZE_RIGHT) != 0) {
-            this.panelWidth = Math.max(MIN_PANEL_WIDTH, this.panelWidth + dx);
-        }
+
         if ((this.resizeMode & RESIZE_TOP) != 0) {
-            int newHeight = this.panelHeight - dy;
-            if (newHeight >= MIN_PANEL_HEIGHT) {
-                this.panelY += dy;
-                this.panelHeight = newHeight;
-            }
+            int fixedBottom = this.resizeStartPanelY + this.resizeStartPanelHeight;
+            y = Math.max(6, Math.min(this.resizeStartPanelY + dy, fixedBottom - MIN_PANEL_HEIGHT));
+            height = fixedBottom - y;
+        } else if ((this.resizeMode & RESIZE_BOTTOM) != 0) {
+            int bottom = Math.min(this.height - 6, Math.max(this.resizeStartPanelY + MIN_PANEL_HEIGHT, this.resizeStartPanelY + this.resizeStartPanelHeight + dy));
+            height = bottom - this.resizeStartPanelY;
         }
-        if ((this.resizeMode & RESIZE_BOTTOM) != 0) {
-            this.panelHeight = Math.max(MIN_PANEL_HEIGHT, this.panelHeight + dy);
-        }
+
+        this.panelX = x;
+        this.panelY = y;
+        this.panelWidth = width;
+        this.panelHeight = height;
         clampPanelToScreen();
     }
 

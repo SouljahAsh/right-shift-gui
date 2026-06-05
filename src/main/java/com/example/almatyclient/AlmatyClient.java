@@ -1,13 +1,24 @@
 package com.example.almatyclient;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -17,13 +28,9 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
-
-import java.util.HashSet;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
 
 public final class AlmatyClient implements ClientModInitializer {
     public static final String MOD_ID = "almatyclient";
@@ -44,9 +51,18 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ENTITY_OVERLAY_BLUE_KEY = "entityOverlay.blue";
     private static final String ENTITY_OVERLAY_WIDTH_KEY = "entityOverlay.width";
 
-    private static final Set<Integer> ESP_GLOW = new HashSet<>();
-    private static final Set<Integer> OVERLAY_GLOW = new HashSet<>();
-    private static final Map<Integer, NameState> FORCED_NAMES = new HashMap<>();
+    private static final RenderPipeline ESP_LINES_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "esp_lines"))
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .build());
+    private static final RenderType ESP_LINES = RenderType.create(
+            "almatyclient_esp_lines",
+            RenderSetup.builder(ESP_LINES_PIPELINE)
+                    .bufferSize(RenderType.SMALL_BUFFER_SIZE)
+                    .createRenderSetup()
+    );
+
     private static boolean sprintKeyForced;
 
     private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
@@ -75,10 +91,9 @@ public final class AlmatyClient implements ClientModInitializer {
             }
 
             tickAutoSprint(client);
-            tickEsp(client);
         });
 
-        WorldRenderEvents.AFTER_ENTITIES.register(context -> tickEntityOverlay(Minecraft.getInstance()));
+        WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
 
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (world.isClientSide() && isParticlesEnabled() && entity instanceof LivingEntity living) {
@@ -117,9 +132,6 @@ public final class AlmatyClient implements ClientModInitializer {
 
     public static void setEspEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(ESP_KEY, enabled);
-        if (!enabled) {
-            clearEspGlow(Minecraft.getInstance());
-        }
     }
 
     public static boolean espPlayers() {
@@ -190,9 +202,6 @@ public final class AlmatyClient implements ClientModInitializer {
 
     public static void setEntityOverlayEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(ENTITY_OVERLAY_KEY, enabled);
-        if (!enabled) {
-            clearOverlayGlow(Minecraft.getInstance());
-        }
     }
 
     public static boolean entityOverlayPlayers() {
@@ -291,76 +300,6 @@ public final class AlmatyClient implements ClientModInitializer {
         client.player.setDeltaMovement(velocity.x * factor, velocity.y, velocity.z * factor);
     }
 
-    private static void tickEsp(Minecraft client) {
-        if (client.level == null || client.player == null) {
-            ESP_GLOW.clear();
-            return;
-        }
-
-        if (!isEspEnabled()) {
-            clearEspGlow(client);
-            return;
-        }
-
-        Set<Integer> active = new HashSet<>();
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (entity == client.player) {
-                continue;
-            }
-
-            boolean target = isEspTarget(entity);
-            if (target) {
-                entity.setGlowingTag(true);
-                active.add(entity.getId());
-                applyNamePlate(entity);
-            } else if (ESP_GLOW.contains(entity.getId())) {
-                if (!OVERLAY_GLOW.contains(entity.getId())) {
-                    entity.setGlowingTag(false);
-                }
-                restoreNamePlate(entity);
-            }
-        }
-
-        FORCED_NAMES.keySet().removeIf(id -> {
-            if (active.contains(id)) {
-                return false;
-            }
-
-            Entity entity = client.level.getEntity(id);
-            if (entity != null) {
-                restoreNamePlate(entity);
-            }
-            return true;
-        });
-        ESP_GLOW.clear();
-        ESP_GLOW.addAll(active);
-    }
-
-    private static void tickEntityOverlay(Minecraft client) {
-        if (client.level == null || client.player == null) {
-            OVERLAY_GLOW.clear();
-            return;
-        }
-
-        if (!isEntityOverlayEnabled()) {
-            clearOverlayGlow(client);
-            return;
-        }
-
-        Set<Integer> active = new HashSet<>();
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (isEntityOverlayTarget(entity)) {
-                entity.setGlowingTag(true);
-                active.add(entity.getId());
-            } else if (OVERLAY_GLOW.contains(entity.getId()) && !ESP_GLOW.contains(entity.getId())) {
-                entity.setGlowingTag(false);
-            }
-        }
-
-        OVERLAY_GLOW.clear();
-        OVERLAY_GLOW.addAll(active);
-    }
-
     private static boolean isEspTarget(Entity entity) {
         if (entity instanceof Player) {
             return espPlayers();
@@ -383,63 +322,110 @@ public final class AlmatyClient implements ClientModInitializer {
         return entity instanceof Mob && entityOverlayMobs();
     }
 
-    private static void applyNamePlate(Entity entity) {
-        if (!(entity instanceof LivingEntity living) || (!espName() && !espHealth())) {
-            restoreNamePlate(entity);
+    private static void renderWorldOverlays(WorldRenderContext context) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null || client.player == null || context.matrices() == null || context.consumers() == null) {
             return;
         }
 
-        FORCED_NAMES.putIfAbsent(entity.getId(), new NameState(entity.getCustomName(), entity.isCustomNameVisible()));
+        if (!isEspEnabled() && !isEntityOverlayEnabled()) {
+            return;
+        }
 
+        PoseStack matrices = context.matrices();
+        MultiBufferSource consumers = context.consumers();
+        Vec3 camera = context.gameRenderer().getMainCamera().position();
+
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (entity == client.player) {
+                continue;
+            }
+
+            boolean espTarget = isEspEnabled() && isEspTarget(entity);
+            boolean overlayTarget = isEntityOverlayTarget(entity);
+            if (!espTarget && !overlayTarget) {
+                continue;
+            }
+
+            if (espTarget || overlayTarget) {
+                renderBoundingBox(matrices, consumers, entity, camera);
+            }
+            if (espTarget) {
+                renderNamePlate(client, matrices, consumers, entity, camera);
+            }
+        }
+    }
+
+    private static void renderBoundingBox(PoseStack matrices, MultiBufferSource consumers, Entity entity, Vec3 camera) {
+        AABB box = entity.getBoundingBox().move(-camera.x, -camera.y, -camera.z);
+        int red = entityOverlayRed();
+        int green = entityOverlayGreen();
+        int blue = entityOverlayBlue();
+        float width = entityOverlayWidth();
+        VertexConsumer lines = consumers.getBuffer(ESP_LINES);
+        PoseStack.Pose pose = matrices.last();
+
+        addLine(lines, pose, box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, red, green, blue, width);
+        addLine(lines, pose, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, red, green, blue, width);
+        addLine(lines, pose, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, red, green, blue, width);
+        addLine(lines, pose, box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, red, green, blue, width);
+
+        addLine(lines, pose, box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, red, green, blue, width);
+        addLine(lines, pose, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, red, green, blue, width);
+        addLine(lines, pose, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, red, green, blue, width);
+        addLine(lines, pose, box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, red, green, blue, width);
+
+        addLine(lines, pose, box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, red, green, blue, width);
+        addLine(lines, pose, box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, red, green, blue, width);
+        addLine(lines, pose, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, red, green, blue, width);
+        addLine(lines, pose, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, red, green, blue, width);
+    }
+
+    private static void addLine(VertexConsumer lines, PoseStack.Pose pose, double x1, double y1, double z1, double x2, double y2, double z2, int red, int green, int blue, float width) {
+        float nx = (float) (x2 - x1);
+        float ny = (float) (y2 - y1);
+        float nz = (float) (z2 - z1);
+        lines.addVertex(pose, (float) x1, (float) y1, (float) z1)
+                .setColor(red, green, blue, 255)
+                .setNormal(pose, nx, ny, nz)
+                .setLineWidth(width);
+        lines.addVertex(pose, (float) x2, (float) y2, (float) z2)
+                .setColor(red, green, blue, 255)
+                .setNormal(pose, nx, ny, nz)
+                .setLineWidth(width);
+    }
+
+    private static void renderNamePlate(Minecraft client, PoseStack matrices, MultiBufferSource consumers, Entity entity, Vec3 camera) {
+        if (!(entity instanceof LivingEntity living) || (!espName() && !espHealth())) {
+            return;
+        }
+
+        Component label = Component.literal(entityLabel(entity, living));
+        Font font = client.font;
+
+        matrices.pushPose();
+        matrices.translate(entity.getX() - camera.x, entity.getY() - camera.y + entity.getBbHeight() + 0.55D, entity.getZ() - camera.z);
+        matrices.mulPose(client.getEntityRenderDispatcher().camera.rotation());
+        matrices.scale(-0.025F, -0.025F, 0.025F);
+
+        float x = -font.width(label) / 2.0F;
+        font.drawInBatch(label, x, 0.0F, 0xFFFFFFFF, false, matrices.last().pose(), consumers, Font.DisplayMode.SEE_THROUGH, 0x66000000, LightTexture.FULL_BRIGHT);
+        font.drawInBatch(label, x, 0.0F, 0xFFFFFFFF, false, matrices.last().pose(), consumers, Font.DisplayMode.NORMAL, 0, LightTexture.FULL_BRIGHT);
+        matrices.popPose();
+    }
+
+    private static String entityLabel(Entity entity, LivingEntity living) {
         StringBuilder text = new StringBuilder();
         if (espName()) {
             text.append(entity.getName().getString());
         }
         if (espHealth()) {
             if (!text.isEmpty()) {
-                text.append(" ");
+                text.append(" | ");
             }
-            text.append(Math.round(living.getHealth())).append("/").append(Math.round(living.getMaxHealth()));
+            text.append("HP: ").append(Math.round(living.getHealth()));
         }
-
-        entity.setCustomName(net.minecraft.network.chat.Component.literal(text.toString()));
-        entity.setCustomNameVisible(true);
-    }
-
-    private static void restoreNamePlate(Entity entity) {
-        NameState state = FORCED_NAMES.remove(entity.getId());
-        if (state == null) {
-            return;
-        }
-
-        entity.setCustomName(state.name());
-        entity.setCustomNameVisible(state.visible());
-    }
-
-    private static void clearEspGlow(Minecraft client) {
-        if (client.level != null) {
-            for (Entity entity : client.level.entitiesForRendering()) {
-                if (ESP_GLOW.contains(entity.getId()) && !OVERLAY_GLOW.contains(entity.getId())) {
-                    entity.setGlowingTag(false);
-                }
-                if (FORCED_NAMES.containsKey(entity.getId())) {
-                    restoreNamePlate(entity);
-                }
-            }
-        }
-        ESP_GLOW.clear();
-        FORCED_NAMES.clear();
-    }
-
-    private static void clearOverlayGlow(Minecraft client) {
-        if (client.level != null) {
-            for (Entity entity : client.level.entitiesForRendering()) {
-                if (OVERLAY_GLOW.contains(entity.getId()) && !ESP_GLOW.contains(entity.getId())) {
-                    entity.setGlowingTag(false);
-                }
-            }
-        }
-        OVERLAY_GLOW.clear();
+        return text.toString();
     }
 
     private static void spawnWaterBubbles(LivingEntity entity) {
@@ -470,8 +456,5 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static int clampColor(int value) {
         return Math.max(0, Math.min(255, value));
-    }
-
-    private record NameState(Component name, boolean visible) {
     }
 }
