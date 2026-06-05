@@ -1,0 +1,17 @@
+#!/bin/sh
+
+branch="$(git branch --show-current 2>/dev/null)"
+if [ -z "$branch" ]; then
+  exit 0
+fi
+
+remote="$(git config --get "branch.$branch.remote" 2>/dev/null)"
+if [ -z "$remote" ]; then
+  remote="$(git remote | sed -n '1p')"
+fi
+
+if [ -z "$remote" ]; then
+  exit 0
+fi
+
+git push "$remote" "HEAD:$branch"
