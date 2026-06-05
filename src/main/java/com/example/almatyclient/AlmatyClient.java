@@ -72,6 +72,7 @@ public final class AlmatyClient implements ClientModInitializer {
     public void onInitializeClient() {
         AlmatyConfig.load();
         AltManager.load();
+        CombatAutomation.init();
 
         openGuiKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.almatyclient.open_gui",

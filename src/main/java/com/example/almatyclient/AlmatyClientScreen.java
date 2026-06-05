@@ -298,6 +298,8 @@ public final class AlmatyClientScreen extends Screen {
     private void drawModuleList(GuiGraphics graphics, int x, int y, int w) {
         if (this.activeTab == Tab.MOVEMENT) {
             drawModuleCard(graphics, x, y, w, "Sprint", "Automatically sprints when moving forward.", AlmatyClient.isAutoSprintEnabled(), true);
+        } else if (this.activeTab == Tab.COMBAT) {
+            drawModuleCard(graphics, x, y, w, "Aura", "Attacks selected targets in range.", CombatAutomation.isAuraEnabled(), true);
         } else if (this.activeTab == Tab.VISUALS) {
             drawModuleCard(graphics, x, y, w, "Particles", "Water bubbles when hitting entities.", AlmatyClient.isParticlesEnabled(), true);
         } else if (this.activeTab == Tab.PLAYERS) {
@@ -332,6 +334,12 @@ public final class AlmatyClientScreen extends Screen {
             drawSettingRow(graphics, x, y + 98, w, "Mode", "Vanilla key-hold sprint.", "Vanilla");
             drawSettingToggle(graphics, x, y + 154, w, "Stop On Collision", "Releases sprint when colliding.", AlmatyClient.sprintStopOnCollision());
             drawSettingRow(graphics, x, y + 210, w, "Start Delay", "Minimal delay before sprinting.", sprintDelayText());
+        } else if (this.activeTab == Tab.COMBAT) {
+            drawDetailHeader(graphics, x, y, w, "Aura", CombatAutomation.isAuraEnabled());
+            drawSettingRow(graphics, x, y + 98, w, "Range", "Target scan distance.", auraRangeText());
+            drawSettingToggle(graphics, x, y + 154, w, "Rotate To Target", "Looks at the target hitbox center.", CombatAutomation.auraRotate());
+            drawCheckRow(graphics, x, y + 214, w, "Players", CombatAutomation.auraPlayers());
+            drawCheckRow(graphics, x, y + 254, w, "Mobs", CombatAutomation.auraMobs());
         } else if (this.activeTab == Tab.VISUALS) {
             drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
             drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
@@ -447,6 +455,13 @@ public final class AlmatyClientScreen extends Screen {
                 return true;
             }
             return clickSprintDetail(mouseX, y);
+        } else if (this.activeTab == Tab.COMBAT) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90)) {
+                CombatAutomation.setAuraEnabled(!CombatAutomation.isAuraEnabled());
+                return true;
+            }
+            return clickAuraDetail(mouseX, y);
         } else if (this.activeTab == Tab.VISUALS) {
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
                     || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 160)) {
@@ -480,6 +495,29 @@ public final class AlmatyClientScreen extends Screen {
         }
         if (inside(mouseX, y, x + 20, base + 210, w - 40, 48)) {
             AlmatyClient.cycleSprintStartDelayTicks();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean clickAuraDetail(double mouseX, int y) {
+        int x = detailX();
+        int w = detailWidth();
+        int base = contentViewportY();
+        if (inside(mouseX, y, x + 20, base + 98, w - 40, 48)) {
+            CombatAutomation.cycleAuraRange();
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 154, w - 40, 48)) {
+            CombatAutomation.setAuraRotate(!CombatAutomation.auraRotate());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 214, w - 40, 34)) {
+            CombatAutomation.setAuraPlayers(!CombatAutomation.auraPlayers());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 254, w - 40, 34)) {
+            CombatAutomation.setAuraMobs(!CombatAutomation.auraMobs());
             return true;
         }
         return false;
@@ -747,6 +785,9 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private int detailHeight() {
+        if (this.activeTab == Tab.COMBAT) {
+            return 320;
+        }
         if (this.activeTab == Tab.PLAYERS) {
             return 340;
         }
@@ -783,6 +824,10 @@ public final class AlmatyClientScreen extends Screen {
         return ticks == 1 ? "1 tick" : ticks + " ticks";
     }
 
+    private static String auraRangeText() {
+        return String.format(java.util.Locale.ROOT, "%.1f blocks", CombatAutomation.auraRange());
+    }
+
     private double toLogicalX(double mouseX) {
         return this.panelX + (mouseX - this.panelX) / GUI_SCALE;
     }
@@ -809,6 +854,7 @@ public final class AlmatyClientScreen extends Screen {
 
     private enum Tab {
         MOVEMENT("Movement", "Improve your movement.", "M"),
+        COMBAT("Combat", "Automated combat modules.", "C"),
         VISUALS("Visuals", "Client-side effects.", "V"),
         PLAYERS("Players", "Entity ESP controls.", "P"),
         OTHER("Other", "Interface settings.", "O");
