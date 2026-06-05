@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -35,8 +36,16 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ESP_ITEMS_KEY = "esp.items";
     private static final String ESP_NAME_KEY = "esp.name";
     private static final String ESP_HEALTH_KEY = "esp.health";
+    private static final String ENTITY_OVERLAY_KEY = "entityOverlay.enabled";
+    private static final String ENTITY_OVERLAY_PLAYERS_KEY = "entityOverlay.players";
+    private static final String ENTITY_OVERLAY_MOBS_KEY = "entityOverlay.mobs";
+    private static final String ENTITY_OVERLAY_RED_KEY = "entityOverlay.red";
+    private static final String ENTITY_OVERLAY_GREEN_KEY = "entityOverlay.green";
+    private static final String ENTITY_OVERLAY_BLUE_KEY = "entityOverlay.blue";
+    private static final String ENTITY_OVERLAY_WIDTH_KEY = "entityOverlay.width";
 
-    private static final Set<Integer> FORCED_GLOW = new HashSet<>();
+    private static final Set<Integer> ESP_GLOW = new HashSet<>();
+    private static final Set<Integer> OVERLAY_GLOW = new HashSet<>();
     private static final Map<Integer, NameState> FORCED_NAMES = new HashMap<>();
     private static boolean sprintKeyForced;
 
@@ -68,6 +77,8 @@ public final class AlmatyClient implements ClientModInitializer {
             tickAutoSprint(client);
             tickEsp(client);
         });
+
+        WorldRenderEvents.AFTER_ENTITIES.register(context -> tickEntityOverlay(Minecraft.getInstance()));
 
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (world.isClientSide() && isParticlesEnabled() && entity instanceof LivingEntity living) {
@@ -107,7 +118,7 @@ public final class AlmatyClient implements ClientModInitializer {
     public static void setEspEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(ESP_KEY, enabled);
         if (!enabled) {
-            clearForcedGlow(Minecraft.getInstance());
+            clearEspGlow(Minecraft.getInstance());
         }
     }
 
@@ -173,6 +184,67 @@ public final class AlmatyClient implements ClientModInitializer {
         return ((alpha & 255) << 24) | (guiRed() << 16) | (guiGreen() << 8) | guiBlue();
     }
 
+    public static boolean isEntityOverlayEnabled() {
+        return AlmatyConfig.getBoolean(ENTITY_OVERLAY_KEY, false);
+    }
+
+    public static void setEntityOverlayEnabled(boolean enabled) {
+        AlmatyConfig.setBoolean(ENTITY_OVERLAY_KEY, enabled);
+        if (!enabled) {
+            clearOverlayGlow(Minecraft.getInstance());
+        }
+    }
+
+    public static boolean entityOverlayPlayers() {
+        return AlmatyConfig.getBoolean(ENTITY_OVERLAY_PLAYERS_KEY, true);
+    }
+
+    public static void setEntityOverlayPlayers(boolean enabled) {
+        AlmatyConfig.setBoolean(ENTITY_OVERLAY_PLAYERS_KEY, enabled);
+    }
+
+    public static boolean entityOverlayMobs() {
+        return AlmatyConfig.getBoolean(ENTITY_OVERLAY_MOBS_KEY, true);
+    }
+
+    public static void setEntityOverlayMobs(boolean enabled) {
+        AlmatyConfig.setBoolean(ENTITY_OVERLAY_MOBS_KEY, enabled);
+    }
+
+    public static int entityOverlayRed() {
+        return AlmatyConfig.getInt(ENTITY_OVERLAY_RED_KEY, 70);
+    }
+
+    public static int entityOverlayGreen() {
+        return AlmatyConfig.getInt(ENTITY_OVERLAY_GREEN_KEY, 160);
+    }
+
+    public static int entityOverlayBlue() {
+        return AlmatyConfig.getInt(ENTITY_OVERLAY_BLUE_KEY, 255);
+    }
+
+    public static void setEntityOverlayColor(int red, int green, int blue) {
+        AlmatyConfig.setInt(ENTITY_OVERLAY_RED_KEY, clampColor(red));
+        AlmatyConfig.setInt(ENTITY_OVERLAY_GREEN_KEY, clampColor(green));
+        AlmatyConfig.setInt(ENTITY_OVERLAY_BLUE_KEY, clampColor(blue));
+    }
+
+    public static int entityOverlayColorRgb() {
+        return (entityOverlayRed() << 16) | (entityOverlayGreen() << 8) | entityOverlayBlue();
+    }
+
+    public static int entityOverlayWidth() {
+        return AlmatyConfig.getInt(ENTITY_OVERLAY_WIDTH_KEY, 2);
+    }
+
+    public static void setEntityOverlayWidth(int width) {
+        AlmatyConfig.setInt(ENTITY_OVERLAY_WIDTH_KEY, Math.max(1, Math.min(6, width)));
+    }
+
+    public static boolean shouldUseEntityOverlayColor(Entity entity) {
+        return isEntityOverlayTarget(entity);
+    }
+
     private static void tickAutoSprint(Minecraft client) {
         if (!isAutoSprintEnabled() || client.player == null || client.options == null) {
             releaseForcedSprint(client);
@@ -221,12 +293,12 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static void tickEsp(Minecraft client) {
         if (client.level == null || client.player == null) {
-            FORCED_GLOW.clear();
+            ESP_GLOW.clear();
             return;
         }
 
         if (!isEspEnabled()) {
-            clearForcedGlow(client);
+            clearEspGlow(client);
             return;
         }
 
@@ -241,8 +313,10 @@ public final class AlmatyClient implements ClientModInitializer {
                 entity.setGlowingTag(true);
                 active.add(entity.getId());
                 applyNamePlate(entity);
-            } else if (FORCED_GLOW.contains(entity.getId())) {
-                entity.setGlowingTag(false);
+            } else if (ESP_GLOW.contains(entity.getId())) {
+                if (!OVERLAY_GLOW.contains(entity.getId())) {
+                    entity.setGlowingTag(false);
+                }
                 restoreNamePlate(entity);
             }
         }
@@ -258,8 +332,33 @@ public final class AlmatyClient implements ClientModInitializer {
             }
             return true;
         });
-        FORCED_GLOW.clear();
-        FORCED_GLOW.addAll(active);
+        ESP_GLOW.clear();
+        ESP_GLOW.addAll(active);
+    }
+
+    private static void tickEntityOverlay(Minecraft client) {
+        if (client.level == null || client.player == null) {
+            OVERLAY_GLOW.clear();
+            return;
+        }
+
+        if (!isEntityOverlayEnabled()) {
+            clearOverlayGlow(client);
+            return;
+        }
+
+        Set<Integer> active = new HashSet<>();
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (isEntityOverlayTarget(entity)) {
+                entity.setGlowingTag(true);
+                active.add(entity.getId());
+            } else if (OVERLAY_GLOW.contains(entity.getId()) && !ESP_GLOW.contains(entity.getId())) {
+                entity.setGlowingTag(false);
+            }
+        }
+
+        OVERLAY_GLOW.clear();
+        OVERLAY_GLOW.addAll(active);
     }
 
     private static boolean isEspTarget(Entity entity) {
@@ -270,6 +369,18 @@ public final class AlmatyClient implements ClientModInitializer {
             return espMobs();
         }
         return entity instanceof ItemEntity && espItems();
+    }
+
+    private static boolean isEntityOverlayTarget(Entity entity) {
+        Minecraft client = Minecraft.getInstance();
+        if (!isEntityOverlayEnabled() || client.player == null || entity == client.player || !(entity instanceof LivingEntity)) {
+            return false;
+        }
+
+        if (entity instanceof Player) {
+            return entityOverlayPlayers();
+        }
+        return entity instanceof Mob && entityOverlayMobs();
     }
 
     private static void applyNamePlate(Entity entity) {
@@ -305,10 +416,10 @@ public final class AlmatyClient implements ClientModInitializer {
         entity.setCustomNameVisible(state.visible());
     }
 
-    private static void clearForcedGlow(Minecraft client) {
+    private static void clearEspGlow(Minecraft client) {
         if (client.level != null) {
             for (Entity entity : client.level.entitiesForRendering()) {
-                if (FORCED_GLOW.contains(entity.getId())) {
+                if (ESP_GLOW.contains(entity.getId()) && !OVERLAY_GLOW.contains(entity.getId())) {
                     entity.setGlowingTag(false);
                 }
                 if (FORCED_NAMES.containsKey(entity.getId())) {
@@ -316,8 +427,19 @@ public final class AlmatyClient implements ClientModInitializer {
                 }
             }
         }
-        FORCED_GLOW.clear();
+        ESP_GLOW.clear();
         FORCED_NAMES.clear();
+    }
+
+    private static void clearOverlayGlow(Minecraft client) {
+        if (client.level != null) {
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (OVERLAY_GLOW.contains(entity.getId()) && !ESP_GLOW.contains(entity.getId())) {
+                    entity.setGlowingTag(false);
+                }
+            }
+        }
+        OVERLAY_GLOW.clear();
     }
 
     private static void spawnWaterBubbles(LivingEntity entity) {
