@@ -27,7 +27,7 @@ public final class EmeraldArmorAutomation {
     private static final int ACTION_DELAY_TICKS = 8;
     private static final int GUI_TIMEOUT_TICKS = 100;
     private static final int BUY_RETRY_DELAY_TICKS = 12;
-    private static final int BUY_CLICK_ATTEMPTS = 3;
+    private static final int BUY_CLICK_ATTEMPTS = 6;
     private static final int PATH_TIMEOUT_TICKS = 20 * 45;
     private static final int BLOCK_SEARCH_RADIUS = 32;
     private static final double INTERACT_RANGE_SQ = 4.5D * 4.5D;
@@ -170,7 +170,7 @@ public final class EmeraldArmorAutomation {
             timeout("Emerald category did not open");
             return;
         }
-        if (findShopSlot(menu, Items.EMERALD) >= 0) {
+        if (findShopEmeraldSlot(menu) >= 0) {
             next(State.BUY_EMERALDS);
             return;
         }
@@ -182,7 +182,7 @@ public final class EmeraldArmorAutomation {
             timeout("Emerald category did not open");
             return;
         }
-        int slot = findShopSlot(menu, Items.EMERALD);
+        int slot = findShopEmeraldSlot(menu);
         if (slot < 0) {
             disable("Emerald item was not found in shop");
             return;
@@ -191,8 +191,14 @@ public final class EmeraldArmorAutomation {
             click(client, slot, 1, ClickType.QUICK_MOVE);
         } else if (emeraldPurchaseAttempt == 1) {
             click(client, slot, 0, ClickType.QUICK_MOVE);
-        } else {
+        } else if (emeraldPurchaseAttempt == 2) {
             click(client, slot, 1, ClickType.PICKUP);
+        } else if (emeraldPurchaseAttempt == 3) {
+            click(client, slot, 0, ClickType.PICKUP);
+        } else if (emeraldPurchaseAttempt == 4) {
+            click(client, slot, 1, ClickType.PICKUP_ALL);
+        } else {
+            click(client, slot, 0, ClickType.PICKUP_ALL);
         }
         emeraldPurchaseAttempt++;
         next(State.WAIT_EMERALDS);
@@ -415,6 +421,26 @@ public final class EmeraldArmorAutomation {
 
     private static int findShopSlot(ChestMenu menu, net.minecraft.world.item.Item item) {
         return findSlot(menu, item, 0, menu.getRowCount() * 9);
+    }
+
+    private static int findShopEmeraldSlot(ChestMenu menu) {
+        int slot = findShopSlot(menu, Items.EMERALD);
+        if (slot >= 0) {
+            return slot;
+        }
+
+        int end = Math.min(menu.getRowCount() * 9, menu.slots.size());
+        for (int index = 0; index < end; index++) {
+            ItemStack stack = menu.getSlot(index).getItem();
+            if (stack.isEmpty()) {
+                continue;
+            }
+            String name = stack.getHoverName().getString().toLowerCase();
+            if (name.contains("emerald") || name.contains("изумруд")) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private static void click(Minecraft client, int slot, int button, ClickType clickType) {
