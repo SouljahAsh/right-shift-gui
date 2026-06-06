@@ -25,6 +25,7 @@ public final class EmeraldArmorAutomation {
     private static final String ENABLED_KEY = "feature.emeraldArmorAutoCraft";
     private static final int EMERALDS_PER_BUY = 64;
     private static final int ACTION_DELAY_TICKS = 8;
+    private static final int CRAFT_DELAY_TICKS = 2;
     private static final int GUI_TIMEOUT_TICKS = 100;
     private static final int BUY_RETRY_DELAY_TICKS = 12;
     private static final int BUY_CLICK_ATTEMPTS = 6;
@@ -124,8 +125,9 @@ public final class EmeraldArmorAutomation {
 
     private static void checkBalance(Minecraft client) {
         int emeralds = client.player.getInventory().countItem(Items.EMERALD);
-        if (emeralds >= EMERALDS_PER_BUY) {
-            armorPatternIndex = 0;
+        int craftablePattern = nextCraftablePatternIndex(0, emeralds);
+        if (craftablePattern >= 0) {
+            armorPatternIndex = craftablePattern;
             next(State.FIND_CRAFTING_TABLE);
             return;
         }
@@ -262,15 +264,22 @@ public final class EmeraldArmorAutomation {
             next(State.FIND_CHEST);
             return;
         }
-        if (client.player.getInventory().countItem(Items.EMERALD) < ARMOR_PATTERNS[armorPatternIndex].length) {
+        int emeralds = client.player.getInventory().countItem(Items.EMERALD);
+        if (emeralds < ARMOR_PATTERNS[armorPatternIndex].length) {
+            int nextCraftable = nextCraftablePatternIndex(armorPatternIndex + 1, emeralds);
+            if (nextCraftable >= 0) {
+                armorPatternIndex = nextCraftable;
+                waitCraftAction();
+                return;
+            }
             closeContainer(client);
-            next(State.CHECK_BALANCE);
+            next(State.FIND_CHEST);
             return;
         }
         int dirtySlot = findDirtyCraftingSlot(menu);
         if (dirtySlot >= 0) {
             click(client, dirtySlot, 0, ClickType.QUICK_MOVE);
-            waitAction();
+            waitCraftAction();
             return;
         }
         emeraldSourceSlot = findSlot(menu, Items.EMERALD, 10, menu.slots.size());
@@ -281,7 +290,7 @@ public final class EmeraldArmorAutomation {
         }
         craftGridIndex = 0;
         click(client, emeraldSourceSlot, 0, ClickType.PICKUP);
-        next(State.PLACE_CRAFT_SLOT);
+        nextFast(State.PLACE_CRAFT_SLOT);
     }
 
     private static void placeCraftSlot(Minecraft client) {
@@ -291,12 +300,12 @@ public final class EmeraldArmorAutomation {
         }
         int[] pattern = ARMOR_PATTERNS[armorPatternIndex];
         if (craftGridIndex >= pattern.length) {
-            next(State.RETURN_EMERALDS);
+            nextFast(State.RETURN_EMERALDS);
             return;
         }
         click(client, pattern[craftGridIndex], 1, ClickType.PICKUP);
         craftGridIndex++;
-        waitAction();
+        waitCraftAction();
     }
 
     private static void returnEmeralds(Minecraft client) {
@@ -312,7 +321,7 @@ public final class EmeraldArmorAutomation {
             return;
         }
         click(client, emeraldSourceSlot, 0, ClickType.PICKUP);
-        next(State.TAKE_CRAFT_RESULT);
+        nextFast(State.TAKE_CRAFT_RESULT);
     }
 
     private static void takeCraftResult(Minecraft client) {
@@ -324,7 +333,7 @@ public final class EmeraldArmorAutomation {
         }
         click(client, 0, 0, ClickType.QUICK_MOVE);
         armorPatternIndex++;
-        next(State.CRAFT_ARMOR);
+        nextFast(State.CRAFT_ARMOR);
     }
 
     private static void findChest(Minecraft client) {
@@ -404,6 +413,15 @@ public final class EmeraldArmorAutomation {
         for (int slot = 10; slot < menu.slots.size(); slot++) {
             if (menu.getSlot(slot).getItem().isEmpty()) {
                 return slot;
+            }
+        }
+        return -1;
+    }
+
+    private static int nextCraftablePatternIndex(int fromIndex, int emeralds) {
+        for (int index = Math.max(0, fromIndex); index < ARMOR_PATTERNS.length; index++) {
+            if (emeralds >= ARMOR_PATTERNS[index].length) {
+                return index;
             }
         }
         return -1;
@@ -540,6 +558,12 @@ public final class EmeraldArmorAutomation {
         waitAction();
     }
 
+    private static void nextFast(State nextState) {
+        state = nextState;
+        stateTicks = 0;
+        waitCraftAction();
+    }
+
     private static void reset(State nextState) {
         state = nextState;
         delayTicks = 0;
@@ -557,6 +581,10 @@ public final class EmeraldArmorAutomation {
 
     private static void waitAction() {
         delayTicks = ACTION_DELAY_TICKS;
+    }
+
+    private static void waitCraftAction() {
+        delayTicks = CRAFT_DELAY_TICKS;
     }
 
     private static void timeout(String message) {
