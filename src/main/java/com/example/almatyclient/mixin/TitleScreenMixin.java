@@ -7,7 +7,9 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.LogoRenderer;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,6 +18,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(TitleScreen.class)
 public abstract class TitleScreenMixin extends Screen {
+    private static final Identifier ALMATY_LOGO = Identifier.fromNamespaceAndPath(
+            "almatyclient",
+            "textures/gui/almaty_client_logo.png"
+    );
+    private static final int LOGO_TEXTURE_WIDTH = 1024;
+    private static final int LOGO_TEXTURE_HEIGHT = 240;
+
     protected TitleScreenMixin(Component title) {
         super(title);
     }
@@ -73,21 +82,23 @@ public abstract class TitleScreenMixin extends Screen {
     }
 
     private void drawAlmatyLogo(GuiGraphics graphics, int screenWidth) {
-        int logoY = 30;
-        int centerX = screenWidth / 2;
-        graphics.pose().pushMatrix();
-        graphics.pose().translate(centerX, logoY);
-        graphics.pose().scale(2.15F, 2.15F);
-
-        drawLogoText(graphics, "AlmatyClient", 2, 2, 0xFF061833);
-        drawLogoText(graphics, "AlmatyClient", 1, 1, 0xFF0A2B5F);
-        drawLogoText(graphics, "AlmatyClient", 0, 0, 0xFF5FB9FF);
-        drawLogoText(graphics, "AlmatyClient", 0, -1, 0xFFAEDCFF);
-
-        graphics.pose().popMatrix();
-    }
-
-    private void drawLogoText(GuiGraphics graphics, String text, int x, int y, int color) {
-        graphics.drawCenteredString(this.font, text, x, y, color);
+        int logoWidth = Math.min(520, Math.max(300, screenWidth - 40));
+        int logoHeight = logoWidth * LOGO_TEXTURE_HEIGHT / LOGO_TEXTURE_WIDTH;
+        int logoX = (screenWidth - logoWidth) / 2;
+        int logoY = 18;
+        graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                ALMATY_LOGO,
+                logoX,
+                logoY,
+                0.0F,
+                0.0F,
+                logoWidth,
+                logoHeight,
+                LOGO_TEXTURE_WIDTH,
+                LOGO_TEXTURE_HEIGHT,
+                LOGO_TEXTURE_WIDTH,
+                LOGO_TEXTURE_HEIGHT
+        );
     }
 }
