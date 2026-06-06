@@ -58,6 +58,11 @@ public final class CombatAutomation {
             releaseForcedMovement(client);
             return;
         }
+        if (!canRunAura(client)) {
+            clearLockedTarget();
+            releaseForcedMovement(client);
+            return;
+        }
         if (client.level == null || client.player == null || client.gameMode == null) {
             clearLockedTarget();
             releaseForcedMovement(client);
@@ -117,6 +122,10 @@ public final class CombatAutomation {
         client.gameMode.attack(player, target);
         player.swing(InteractionHand.MAIN_HAND);
         ticksSinceAttack = 0;
+    }
+
+    private static boolean canRunAura(Minecraft client) {
+        return client.isSingleplayer() || client.isLocalServer();
     }
 
     private static Entity lockedTarget(Minecraft client, LocalPlayer player) {
