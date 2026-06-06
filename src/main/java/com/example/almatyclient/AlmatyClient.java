@@ -6,6 +6,7 @@ import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.example.almatyclient.mixin.LivingEntityJumpAccessor;
+import com.example.almatyclient.mixin.MinecraftRightClickAccessor;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -15,6 +16,7 @@ import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
@@ -40,6 +42,9 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String ESP_KEY = "feature.esp";
     private static final String INVENTORY_WALK_KEY = "feature.inventoryWalk";
     private static final String NO_JUMP_DELAY_KEY = "feature.noJumpDelay";
+    private static final String FULLBRIGHT_KEY = "feature.fullbright";
+    private static final String FAST_PLACE_KEY = "feature.fastPlace";
+    private static final String AUTO_RESPAWN_KEY = "feature.autoRespawn";
     private static final String ESP_PLAYERS_KEY = "esp.players";
     private static final String ESP_MOBS_KEY = "esp.mobs";
     private static final String ESP_ITEMS_KEY = "esp.items";
@@ -65,7 +70,9 @@ public final class AlmatyClient implements ClientModInitializer {
 
     private static boolean sprintKeyForced;
     private static boolean inventoryWalkForced;
+    private static boolean fullbrightApplied;
     private static int forwardTicks;
+    private static Double previousGamma;
 
     private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
             Identifier.fromNamespaceAndPath(MOD_ID, "controls")
@@ -97,6 +104,9 @@ public final class AlmatyClient implements ClientModInitializer {
             tickInventoryWalk(client);
             tickAutoSprint(client);
             tickNoJumpDelay(client);
+            tickFastPlace(client);
+            tickFullbright(client);
+            tickAutoRespawn(client);
         });
 
         WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
@@ -188,6 +198,33 @@ public final class AlmatyClient implements ClientModInitializer {
 
     public static void setNoJumpDelayEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(NO_JUMP_DELAY_KEY, enabled);
+    }
+
+    public static boolean isFullbrightEnabled() {
+        return AlmatyConfig.getBoolean(FULLBRIGHT_KEY, false);
+    }
+
+    public static void setFullbrightEnabled(boolean enabled) {
+        AlmatyConfig.setBoolean(FULLBRIGHT_KEY, enabled);
+        if (!enabled) {
+            releaseFullbright(Minecraft.getInstance());
+        }
+    }
+
+    public static boolean isFastPlaceEnabled() {
+        return AlmatyConfig.getBoolean(FAST_PLACE_KEY, false);
+    }
+
+    public static void setFastPlaceEnabled(boolean enabled) {
+        AlmatyConfig.setBoolean(FAST_PLACE_KEY, enabled);
+    }
+
+    public static boolean isAutoRespawnEnabled() {
+        return AlmatyConfig.getBoolean(AUTO_RESPAWN_KEY, false);
+    }
+
+    public static void setAutoRespawnEnabled(boolean enabled) {
+        AlmatyConfig.setBoolean(AUTO_RESPAWN_KEY, enabled);
     }
 
     public static boolean espPlayers() {
@@ -328,6 +365,53 @@ public final class AlmatyClient implements ClientModInitializer {
         }
 
         ((LivingEntityJumpAccessor) client.player).almatyclient$setNoJumpDelay(0);
+    }
+
+    private static void tickFastPlace(Minecraft client) {
+        if (!isFastPlaceEnabled() || client.player == null) {
+            return;
+        }
+
+        ((MinecraftRightClickAccessor) client).almatyclient$setRightClickDelay(0);
+    }
+
+    private static void tickFullbright(Minecraft client) {
+        if (!isFullbrightEnabled() || client.options == null) {
+            releaseFullbright(client);
+            return;
+        }
+
+        if (!fullbrightApplied) {
+            previousGamma = client.options.gamma().get();
+            fullbrightApplied = true;
+        }
+
+        if (client.options.gamma().get() < 1.0D) {
+            client.options.gamma().set(1.0D);
+        }
+    }
+
+    private static void releaseFullbright(Minecraft client) {
+        if (!fullbrightApplied || client.options == null) {
+            fullbrightApplied = false;
+            previousGamma = null;
+            return;
+        }
+
+        if (previousGamma != null) {
+            client.options.gamma().set(previousGamma);
+        }
+        fullbrightApplied = false;
+        previousGamma = null;
+    }
+
+    private static void tickAutoRespawn(Minecraft client) {
+        if (!isAutoRespawnEnabled() || client.player == null || !(client.screen instanceof DeathScreen)) {
+            return;
+        }
+
+        client.player.respawn();
+        client.setScreen(null);
     }
 
     private static boolean isEspTarget(Entity entity) {

@@ -34,6 +34,17 @@ public enum ClientModule {
             AlmatyClient.setParticlesEnabled(enabled);
         }
     },
+    FULLBRIGHT("fullbright", "Fullbright") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isFullbrightEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setFullbrightEnabled(enabled);
+        }
+    },
     ESP("esp", "ESP") {
         @Override
         public boolean isEnabled() {
@@ -65,6 +76,28 @@ public enum ClientModule {
         @Override
         public void setEnabled(boolean enabled) {
             AlmatyClient.setNoJumpDelayEnabled(enabled);
+        }
+    },
+    FAST_PLACE("fastPlace", "FastPlace") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isFastPlaceEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setFastPlaceEnabled(enabled);
+        }
+    },
+    AUTO_RESPAWN("autoRespawn", "AutoRespawn") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isAutoRespawnEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setAutoRespawnEnabled(enabled);
         }
     };
 

@@ -339,10 +339,13 @@ public final class AlmatyClientScreen extends Screen {
             drawModuleCard(graphics, x, y, w, "Aura", "Attacks selected targets in range.", CombatAutomation.isAuraEnabled(), true);
         } else if (this.activeTab == Tab.VISUALS) {
             drawModuleCard(graphics, x, y, w, "Particles", "Water bubbles when hitting entities.", AlmatyClient.isParticlesEnabled(), true);
+            drawModuleCard(graphics, x, y + 82, w, "Fullbright", "Keeps caves and dark areas fully visible.", AlmatyClient.isFullbrightEnabled(), true);
         } else if (this.activeTab == Tab.PLAYERS) {
             drawModuleCard(graphics, x, y, w, "ESP", "Boxes and labels for selected entities.", AlmatyClient.isEspEnabled(), true);
             drawModuleCard(graphics, x, y + 82, w, "InventoryWalk", "Move while inventory and GUI screens are open.", AlmatyClient.isInventoryWalkEnabled(), true);
             drawModuleCard(graphics, x, y + 164, w, "No Jump Delay", "Jump again instantly while holding Space.", AlmatyClient.isNoJumpDelayEnabled(), true);
+            drawModuleCard(graphics, x, y + 246, w, "FastPlace", "Removes the right-click placement delay.", AlmatyClient.isFastPlaceEnabled(), true);
+            drawModuleCard(graphics, x, y + 328, w, "AutoRespawn", "Automatically respawns after death.", AlmatyClient.isAutoRespawnEnabled(), true);
         } else if (this.activeTab == Tab.OTHER) {
             drawModuleCard(graphics, x, y, w, "Colors", "Adjust the client accent color.", true, true);
             drawSmallActionButton(graphics, resetButtonX(), resetButtonY(), resetButtonWidth(), RESET_BUTTON_HEIGHT, "Reset GUI");
@@ -385,6 +388,7 @@ public final class AlmatyClientScreen extends Screen {
         } else if (this.activeTab == Tab.VISUALS) {
             drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
             drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
+            drawSettingToggle(graphics, x, y + 154, w, "Fullbright", "Forces maximum gamma while enabled.", AlmatyClient.isFullbrightEnabled());
         } else if (this.activeTab == Tab.PLAYERS) {
             drawDetailHeader(graphics, x, y, w, "ESP", AlmatyClient.isEspEnabled());
             drawCheckRow(graphics, x, y + 98, w, "Players", AlmatyClient.espPlayers());
@@ -394,6 +398,8 @@ public final class AlmatyClientScreen extends Screen {
             drawCheckRow(graphics, x, y + 278, w, "Health", AlmatyClient.espHealth());
             drawSettingToggle(graphics, x, y + 328, w, "InventoryWalk", "Keeps movement keys active while screens are open.", AlmatyClient.isInventoryWalkEnabled());
             drawSettingToggle(graphics, x, y + 384, w, "No Jump Delay", "Clears vanilla jump cooldown while enabled.", AlmatyClient.isNoJumpDelayEnabled());
+            drawSettingToggle(graphics, x, y + 440, w, "FastPlace", "Clears block placement delay every tick.", AlmatyClient.isFastPlaceEnabled());
+            drawSettingToggle(graphics, x, y + 496, w, "AutoRespawn", "Presses respawn automatically on death screen.", AlmatyClient.isAutoRespawnEnabled());
         } else if (this.activeTab == Tab.OTHER) {
             drawDetailHeader(graphics, x, y, w, "Color", true);
             drawColorSlider(graphics, x + 22, y + 106, w - 44, "Red", AlmatyClient.guiRed(), 0);
@@ -507,12 +513,25 @@ public final class AlmatyClientScreen extends Screen {
             }
             return clickAuraDetail(mouseX, y);
         } else if (this.activeTab == Tab.VISUALS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
+                AlmatyClient.setFullbrightEnabled(!AlmatyClient.isFullbrightEnabled());
+                return true;
+            }
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
-                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 160)) {
+                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90)) {
                 AlmatyClient.setParticlesEnabled(!AlmatyClient.isParticlesEnabled());
                 return true;
             }
+            return clickVisualDetail(mouseX, y);
         } else if (this.activeTab == Tab.PLAYERS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 386, moduleListWidth(), 70)) {
+                AlmatyClient.setAutoRespawnEnabled(!AlmatyClient.isAutoRespawnEnabled());
+                return true;
+            }
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 304, moduleListWidth(), 70)) {
+                AlmatyClient.setFastPlaceEnabled(!AlmatyClient.isFastPlaceEnabled());
+                return true;
+            }
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 222, moduleListWidth(), 70)) {
                 AlmatyClient.setNoJumpDelayEnabled(!AlmatyClient.isNoJumpDelayEnabled());
                 return true;
@@ -554,8 +573,11 @@ public final class AlmatyClientScreen extends Screen {
 
         int y = (int) Math.round(mouseY + this.contentScroll);
         boolean moduleCard = inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                || (this.activeTab == Tab.VISUALS && inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70))
                 || (this.activeTab == Tab.PLAYERS && inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70))
-                || (this.activeTab == Tab.PLAYERS && inside(mouseX, y, moduleListX(), contentViewportY() + 222, moduleListWidth(), 70));
+                || (this.activeTab == Tab.PLAYERS && inside(mouseX, y, moduleListX(), contentViewportY() + 222, moduleListWidth(), 70))
+                || (this.activeTab == Tab.PLAYERS && inside(mouseX, y, moduleListX(), contentViewportY() + 304, moduleListWidth(), 70))
+                || (this.activeTab == Tab.PLAYERS && inside(mouseX, y, moduleListX(), contentViewportY() + 386, moduleListWidth(), 70));
         boolean detailHeader = inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90);
         if (!moduleCard && !detailHeader) {
             return null;
@@ -568,9 +590,18 @@ public final class AlmatyClientScreen extends Screen {
             return ClientModule.AURA;
         }
         if (this.activeTab == Tab.VISUALS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
+                return ClientModule.FULLBRIGHT;
+            }
             return ClientModule.PARTICLES;
         }
         if (this.activeTab == Tab.PLAYERS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 386, moduleListWidth(), 70)) {
+                return ClientModule.AUTO_RESPAWN;
+            }
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 304, moduleListWidth(), 70)) {
+                return ClientModule.FAST_PLACE;
+            }
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 222, moduleListWidth(), 70)) {
                 return ClientModule.NO_JUMP_DELAY;
             }
@@ -592,6 +623,21 @@ public final class AlmatyClientScreen extends Screen {
         }
         if (inside(mouseX, y, x + 20, base + 210, w - 40, 48)) {
             AlmatyClient.cycleSprintStartDelayTicks();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean clickVisualDetail(double mouseX, int y) {
+        int x = detailX();
+        int w = detailWidth();
+        int base = contentViewportY();
+        if (inside(mouseX, y, x + 20, base + 98, w - 40, 48)) {
+            AlmatyClient.setParticlesEnabled(!AlmatyClient.isParticlesEnabled());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 154, w - 40, 48)) {
+            AlmatyClient.setFullbrightEnabled(!AlmatyClient.isFullbrightEnabled());
             return true;
         }
         return false;
@@ -662,6 +708,14 @@ public final class AlmatyClientScreen extends Screen {
         }
         if (inside(mouseX, y, x + 20, base + 384, w - 40, 48)) {
             AlmatyClient.setNoJumpDelayEnabled(!AlmatyClient.isNoJumpDelayEnabled());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 440, w - 40, 48)) {
+            AlmatyClient.setFastPlaceEnabled(!AlmatyClient.isFastPlaceEnabled());
+            return true;
+        }
+        if (inside(mouseX, y, x + 20, base + 496, w - 40, 48)) {
+            AlmatyClient.setAutoRespawnEnabled(!AlmatyClient.isAutoRespawnEnabled());
             return true;
         }
         return false;
@@ -923,7 +977,7 @@ public final class AlmatyClientScreen extends Screen {
             return 460;
         }
         if (this.activeTab == Tab.PLAYERS) {
-            return 456;
+            return 568;
         }
         if (this.activeTab == Tab.OTHER) {
             return 350;
@@ -982,10 +1036,10 @@ public final class AlmatyClientScreen extends Screen {
             return "Aura";
         }
         if (tab == Tab.VISUALS) {
-            return "Particles";
+            return "Particles / Fullbright";
         }
         if (tab == Tab.PLAYERS) {
-            return "ESP / InventoryWalk / No Jump Delay";
+            return "ESP / Movement helpers";
         }
         return "Colors";
     }

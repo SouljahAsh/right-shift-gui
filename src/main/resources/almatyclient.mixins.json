@@ -6,6 +6,7 @@
     "ClientPacketListenerAccessor",
     "EntityRendererMixin",
     "LivingEntityJumpAccessor",
+    "MinecraftRightClickAccessor",
     "MinecraftUserAccessor",
     "PlayerGameProfileAccessor",
     "PlayerInfoAccessor",
