@@ -26,6 +26,8 @@ public final class EmeraldArmorAutomation {
     private static final int EMERALDS_PER_BUY = 64;
     private static final int ACTION_DELAY_TICKS = 8;
     private static final int GUI_TIMEOUT_TICKS = 100;
+    private static final int BUY_RETRY_DELAY_TICKS = 12;
+    private static final int BUY_CLICK_ATTEMPTS = 3;
     private static final int PATH_TIMEOUT_TICKS = 20 * 45;
     private static final int BLOCK_SEARCH_RADIUS = 32;
     private static final double INTERACT_RANGE_SQ = 4.5D * 4.5D;
@@ -40,6 +42,7 @@ public final class EmeraldArmorAutomation {
     private static int delayTicks;
     private static int stateTicks;
     private static int emeraldsBeforeShop;
+    private static int emeraldPurchaseAttempt;
     private static int armorPatternIndex;
     private static int craftGridIndex;
     private static int emeraldSourceSlot;
@@ -148,12 +151,16 @@ public final class EmeraldArmorAutomation {
     }
 
     private static void clickShopGold(Minecraft client) {
-        AbstractContainerMenu menu = client.player.containerMenu;
-        int slot = findSlot(menu, Items.GOLD_INGOT, 0, menu.slots.size());
+        if (!(client.player.containerMenu instanceof ChestMenu menu)) {
+            timeout("Shop did not open");
+            return;
+        }
+        int slot = findShopSlot(menu, Items.GOLD_INGOT);
         if (slot < 0) {
             timeout("Gold category was not found");
             return;
         }
+        emeraldPurchaseAttempt = 0;
         click(client, slot, 0, ClickType.PICKUP);
         next(State.WAIT_EMERALD_CATEGORY);
     }
@@ -163,7 +170,7 @@ public final class EmeraldArmorAutomation {
             timeout("Emerald category did not open");
             return;
         }
-        if (findSlot(menu, Items.EMERALD, 0, menu.slots.size()) >= 0) {
+        if (findShopSlot(menu, Items.EMERALD) >= 0) {
             next(State.BUY_EMERALDS);
             return;
         }
@@ -171,13 +178,23 @@ public final class EmeraldArmorAutomation {
     }
 
     private static void buyEmeralds(Minecraft client) {
-        AbstractContainerMenu menu = client.player.containerMenu;
-        int slot = findSlot(menu, Items.EMERALD, 0, menu.slots.size());
+        if (!(client.player.containerMenu instanceof ChestMenu menu)) {
+            timeout("Emerald category did not open");
+            return;
+        }
+        int slot = findShopSlot(menu, Items.EMERALD);
         if (slot < 0) {
             disable("Emerald item was not found in shop");
             return;
         }
-        click(client, slot, 1, ClickType.QUICK_MOVE);
+        if (emeraldPurchaseAttempt == 0) {
+            click(client, slot, 1, ClickType.QUICK_MOVE);
+        } else if (emeraldPurchaseAttempt == 1) {
+            click(client, slot, 0, ClickType.QUICK_MOVE);
+        } else {
+            click(client, slot, 1, ClickType.PICKUP);
+        }
+        emeraldPurchaseAttempt++;
         next(State.WAIT_EMERALDS);
     }
 
@@ -189,7 +206,11 @@ public final class EmeraldArmorAutomation {
             next(State.FIND_CRAFTING_TABLE);
             return;
         }
-        if (stateTicks > 20) {
+        if (stateTicks > BUY_RETRY_DELAY_TICKS && emeraldPurchaseAttempt < BUY_CLICK_ATTEMPTS) {
+            next(State.BUY_EMERALDS);
+            return;
+        }
+        if (stateTicks > BUY_RETRY_DELAY_TICKS) {
             closeContainer(client);
             disable("Emerald balance did not change");
         }
@@ -392,6 +413,10 @@ public final class EmeraldArmorAutomation {
         return -1;
     }
 
+    private static int findShopSlot(ChestMenu menu, net.minecraft.world.item.Item item) {
+        return findSlot(menu, item, 0, menu.getRowCount() * 9);
+    }
+
     private static void click(Minecraft client, int slot, int button, ClickType clickType) {
         client.gameMode.handleInventoryMouseClick(client.player.containerMenu.containerId, slot, button, clickType, client.player);
     }
@@ -490,6 +515,7 @@ public final class EmeraldArmorAutomation {
         delayTicks = 0;
         stateTicks = 0;
         emeraldsBeforeShop = 0;
+        emeraldPurchaseAttempt = 0;
         armorPatternIndex = 0;
         craftGridIndex = 0;
         emeraldSourceSlot = -1;
