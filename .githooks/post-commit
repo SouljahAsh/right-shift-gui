@@ -26,12 +26,12 @@ if git rev-parse --verify --quiet "refs/remotes/$remote/$upstream_branch" >/dev/
   git pull --rebase --autostash "$remote" "$upstream_branch" || exit $?
 fi
 
-if command -v cmd.exe >/dev/null 2>&1 && [ -f gradlew.bat ]; then
-  cmd.exe /c gradlew.bat build || exit $?
-elif [ -x ./gradlew ]; then
-  ./gradlew build || exit $?
+if [ -f ./gradlew ]; then
+  sh ./gradlew build -x installClientJar || exit $?
+elif command -v cmd.exe >/dev/null 2>&1 && [ -f gradlew.bat ]; then
+  cmd.exe //c gradlew.bat build -x installClientJar || exit $?
 else
-  sh ./gradlew build || exit $?
+  exit 1
 fi
 
 git push "$remote" "HEAD:$upstream_branch"
