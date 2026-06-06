@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -503,30 +504,96 @@ public final class AlmatyClient implements ClientModInitializer {
             return null;
         }
 
-        String label = entityLabel(entity);
-        return label.isBlank() ? null : Component.literal(label);
+        return entityLabel(entity);
     }
 
-    private static String entityLabel(Entity entity) {
+    private static Component entityLabel(Entity entity) {
         if (entity instanceof ItemEntity itemEntity) {
-            return itemLabel(itemEntity);
+            return itemLabelComponent(itemEntity);
         }
 
         if (!(entity instanceof LivingEntity living)) {
-            return baseDisplayName(entity);
+            return styledNameOnly(baseDisplayName(entity));
         }
 
-        StringBuilder text = new StringBuilder();
+        String name = baseDisplayName(entity);
+        if (name.isBlank() && !espHealth()) {
+            return null;
+        }
+
+        net.minecraft.network.chat.MutableComponent label = Component.empty()
+                .append(Component.literal("[ ").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD));
+
         if (espName()) {
-            text.append(baseDisplayName(entity));
+            label.append(Component.literal(name).withColor(AlmatyClient.accentColor(255) & 0xFFFFFF).withStyle(ChatFormatting.BOLD));
         }
         if (espHealth()) {
-            if (!text.isEmpty()) {
-                text.append(" | ");
+            if (espName()) {
+                label.append(Component.literal("  ").withStyle(ChatFormatting.DARK_GRAY));
             }
-            text.append("HP: ").append(Math.round(living.getHealth()));
+            label.append(healthLabel(living));
         }
-        return text.toString();
+        return label.append(Component.literal(" ]").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD));
+    }
+
+    private static Component styledNameOnly(String name) {
+        if (name.isBlank()) {
+            return null;
+        }
+
+        return Component.empty()
+                .append(Component.literal("[ ").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD))
+                .append(Component.literal(name).withColor(AlmatyClient.accentColor(255) & 0xFFFFFF).withStyle(ChatFormatting.BOLD))
+                .append(Component.literal(" ]").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD));
+    }
+
+    private static Component itemLabelComponent(ItemEntity itemEntity) {
+        String label = itemLabel(itemEntity);
+        if (label.isBlank()) {
+            return null;
+        }
+
+        return Component.empty()
+                .append(Component.literal("[ ").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD))
+                .append(Component.literal("ITEM ").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD))
+                .append(Component.literal(label).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" ]").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD));
+    }
+
+    private static Component healthLabel(LivingEntity living) {
+        float health = Math.max(0.0F, living.getHealth());
+        float maxHealth = Math.max(1.0F, living.getMaxHealth());
+        float percent = Math.max(0.0F, Math.min(1.0F, health / maxHealth));
+        ChatFormatting color = healthColor(percent);
+
+        return Component.empty()
+                .append(Component.literal("HP ").withStyle(ChatFormatting.GRAY, ChatFormatting.BOLD))
+                .append(Component.literal(Math.round(health) + "/" + Math.round(maxHealth)).withStyle(color, ChatFormatting.BOLD))
+                .append(Component.literal(" " + Math.round(percent * 100.0F) + "% ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(healthBar(percent, color));
+    }
+
+    private static Component healthBar(float percent, ChatFormatting color) {
+        int segments = 10;
+        int filled = Math.max(0, Math.min(segments, Math.round(percent * segments)));
+        net.minecraft.network.chat.MutableComponent bar = Component.literal("[").withStyle(ChatFormatting.DARK_GRAY);
+        if (filled > 0) {
+            bar.append(Component.literal("|".repeat(filled)).withStyle(color, ChatFormatting.BOLD));
+        }
+        if (filled < segments) {
+            bar.append(Component.literal("-".repeat(segments - filled)).withStyle(ChatFormatting.DARK_GRAY));
+        }
+        return bar.append(Component.literal("]").withStyle(ChatFormatting.DARK_GRAY));
+    }
+
+    private static ChatFormatting healthColor(float percent) {
+        if (percent >= 0.66F) {
+            return ChatFormatting.GREEN;
+        }
+        if (percent >= 0.33F) {
+            return ChatFormatting.YELLOW;
+        }
+        return ChatFormatting.RED;
     }
 
     private static String itemLabel(ItemEntity itemEntity) {
