@@ -55,6 +55,17 @@ public enum ClientModule {
         public void setEnabled(boolean enabled) {
             AlmatyClient.setInventoryWalkEnabled(enabled);
         }
+    },
+    NO_JUMP_DELAY("noJumpDelay", "No Jump Delay") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isNoJumpDelayEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setNoJumpDelayEnabled(enabled);
+        }
     };
 
     private final String id;

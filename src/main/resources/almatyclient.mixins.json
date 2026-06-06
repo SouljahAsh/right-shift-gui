@@ -5,6 +5,7 @@
   "client": [
     "ClientPacketListenerAccessor",
     "EntityRendererMixin",
+    "LivingEntityJumpAccessor",
     "MinecraftUserAccessor",
     "PlayerGameProfileAccessor",
     "PlayerInfoAccessor",

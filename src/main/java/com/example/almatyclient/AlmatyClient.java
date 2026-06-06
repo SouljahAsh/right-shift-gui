@@ -5,6 +5,7 @@ import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.example.almatyclient.mixin.LivingEntityJumpAccessor;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -38,6 +39,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String PARTICLES_KEY = "feature.particles";
     private static final String ESP_KEY = "feature.esp";
     private static final String INVENTORY_WALK_KEY = "feature.inventoryWalk";
+    private static final String NO_JUMP_DELAY_KEY = "feature.noJumpDelay";
     private static final String ESP_PLAYERS_KEY = "esp.players";
     private static final String ESP_MOBS_KEY = "esp.mobs";
     private static final String ESP_ITEMS_KEY = "esp.items";
@@ -94,6 +96,7 @@ public final class AlmatyClient implements ClientModInitializer {
 
             tickInventoryWalk(client);
             tickAutoSprint(client);
+            tickNoJumpDelay(client);
         });
 
         WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
@@ -177,6 +180,14 @@ public final class AlmatyClient implements ClientModInitializer {
         if (!enabled) {
             releaseInventoryWalk(Minecraft.getInstance());
         }
+    }
+
+    public static boolean isNoJumpDelayEnabled() {
+        return AlmatyConfig.getBoolean(NO_JUMP_DELAY_KEY, false);
+    }
+
+    public static void setNoJumpDelayEnabled(boolean enabled) {
+        AlmatyConfig.setBoolean(NO_JUMP_DELAY_KEY, enabled);
     }
 
     public static boolean espPlayers() {
@@ -309,6 +320,14 @@ public final class AlmatyClient implements ClientModInitializer {
         client.options.keySprint.setDown(false);
         client.options.keyShift.setDown(false);
         inventoryWalkForced = false;
+    }
+
+    private static void tickNoJumpDelay(Minecraft client) {
+        if (!isNoJumpDelayEnabled() || client.player == null) {
+            return;
+        }
+
+        ((LivingEntityJumpAccessor) client.player).almatyclient$setNoJumpDelay(0);
     }
 
     private static boolean isEspTarget(Entity entity) {
