@@ -92,8 +92,8 @@ public final class AlmatyClient implements ClientModInitializer {
                 }
             }
 
-            tickAutoSprint(client);
             tickInventoryWalk(client);
+            tickAutoSprint(client);
         });
 
         WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
