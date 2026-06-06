@@ -389,8 +389,9 @@ public final class AlmatyClientScreen extends Screen {
             drawCheckRow(graphics, x, y + 406, w, "Mobs", CombatAutomation.auraMobs());
         } else if (this.activeTab == Tab.PVE) {
             drawDetailHeader(graphics, x, y, w, "Emerald AutoCraft", EmeraldArmorAutomation.isEnabled());
-            drawSettingRow(graphics, x, y + 98, w, "State", "Current automation stage.", EmeraldArmorAutomation.stateText());
-            drawSettingRow(graphics, x, y + 154, w, "Last Error", "Why the module stopped.", EmeraldArmorAutomation.lastError());
+            drawSettingRow(graphics, x, y + 98, w, "Target", "What item should be crafted.", EmeraldArmorAutomation.targetText());
+            drawSettingRow(graphics, x, y + 154, w, "State", "Current automation stage.", EmeraldArmorAutomation.stateText());
+            drawSettingRow(graphics, x, y + 210, w, "Last Error", "Why the module stopped.", EmeraldArmorAutomation.lastError());
         } else if (this.activeTab == Tab.VISUALS) {
             drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
             drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
@@ -524,6 +525,7 @@ public final class AlmatyClientScreen extends Screen {
                 EmeraldArmorAutomation.toggle();
                 return true;
             }
+            return clickPveDetail(mouseX, y);
         } else if (this.activeTab == Tab.VISUALS) {
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
                 AlmatyClient.setFullbrightEnabled(!AlmatyClient.isFullbrightEnabled());
@@ -688,6 +690,17 @@ public final class AlmatyClientScreen extends Screen {
         }
         if (inside(mouseX, y, x + 20, base + 406, w - 40, 34)) {
             CombatAutomation.setAuraMobs(!CombatAutomation.auraMobs());
+            return true;
+        }
+        return false;
+    }
+
+    private boolean clickPveDetail(double mouseX, int y) {
+        int x = detailX();
+        int w = detailWidth();
+        int base = contentViewportY();
+        if (inside(mouseX, y, x + 20, base + 98, w - 40, 48)) {
+            EmeraldArmorAutomation.cycleTarget();
             return true;
         }
         return false;

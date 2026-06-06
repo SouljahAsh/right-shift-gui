@@ -12,6 +12,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -23,6 +24,7 @@ import java.lang.reflect.Method;
 
 public final class EmeraldArmorAutomation {
     private static final String ENABLED_KEY = "feature.emeraldArmorAutoCraft";
+    private static final String TARGET_KEY = "emeraldAutoCraft.target";
     private static final int EMERALDS_PER_BUY = 64;
     private static final int ACTION_DELAY_TICKS = 8;
     private static final int CRAFT_DELAY_TICKS = 1;
@@ -32,12 +34,16 @@ public final class EmeraldArmorAutomation {
     private static final int PATH_TIMEOUT_TICKS = 20 * 45;
     private static final int BLOCK_SEARCH_RADIUS = 32;
     private static final double INTERACT_RANGE_SQ = 4.5D * 4.5D;
-    private static final int[][] ARMOR_PATTERNS = {
-            {1, 2, 3, 4, 6},
-            {1, 3, 4, 5, 6, 7, 8, 9},
-            {1, 2, 3, 4, 6, 7, 9},
-            {4, 6, 7, 9}
+    private static final RecipeSpec[] ARMOR_RECIPES = {
+            recipe(group(Items.EMERALD, 1, 2, 3, 4, 6)),
+            recipe(group(Items.EMERALD, 1, 3, 4, 5, 6, 7, 8, 9)),
+            recipe(group(Items.EMERALD, 1, 2, 3, 4, 6, 7, 9)),
+            recipe(group(Items.EMERALD, 4, 6, 7, 9))
     };
+    private static final RecipeSpec SWORD_RECIPE = recipe(
+            group(Items.EMERALD, 2, 5),
+            group(Items.STICK, 8)
+    );
 
     private static State state = State.IDLE;
     private static int delayTicks;
@@ -45,8 +51,10 @@ public final class EmeraldArmorAutomation {
     private static int emeraldsBeforeShop;
     private static int emeraldPurchaseAttempt;
     private static int armorPatternIndex;
+    private static int recipeGroupIndex;
     private static int craftGridIndex;
-    private static int emeraldSourceSlot;
+    private static int ingredientSourceSlot;
+    private static RecipeSpec currentRecipe;
     private static BlockPos targetBlock;
     private static String lastError = "";
 
@@ -83,6 +91,30 @@ public final class EmeraldArmorAutomation {
         return lastError.isBlank() ? "None" : lastError;
     }
 
+    public static String targetText() {
+        return target().title;
+    }
+
+    public static void cycleTarget() {
+        setTarget(target() == CraftTarget.ARMOR ? CraftTarget.SWORD : CraftTarget.ARMOR);
+    }
+
+    private static CraftTarget target() {
+        String raw = AlmatyConfig.getString(TARGET_KEY, CraftTarget.ARMOR.name());
+        try {
+            return CraftTarget.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            return CraftTarget.ARMOR;
+        }
+    }
+
+    private static void setTarget(CraftTarget target) {
+        AlmatyConfig.setString(TARGET_KEY, target.name());
+        if (isEnabled()) {
+            reset(State.CHECK_BALANCE);
+        }
+    }
+
     private static void tick(Minecraft client) {
         if (!isEnabled()) {
             return;
@@ -109,6 +141,7 @@ public final class EmeraldArmorAutomation {
             case OPEN_CRAFTING_TABLE -> openBlock(client, State.WAIT_CRAFTING, Blocks.CRAFTING_TABLE);
             case WAIT_CRAFTING -> waitCrafting(client);
             case CRAFT_ARMOR -> craftArmorPiece(client);
+            case PICKUP_CRAFT_ITEM -> pickupCraftItem(client);
             case PLACE_CRAFT_SLOT -> placeCraftSlot(client);
             case RETURN_EMERALDS -> returnEmeralds(client);
             case TAKE_CRAFT_RESULT -> takeCraftResult(client);
@@ -124,18 +157,22 @@ public final class EmeraldArmorAutomation {
     }
 
     private static void checkBalance(Minecraft client) {
-        int emeralds = client.player.getInventory().countItem(Items.EMERALD);
-        int craftablePattern = nextCraftablePatternIndex(0, emeralds);
-        if (craftablePattern >= 0) {
-            armorPatternIndex = craftablePattern;
+        RecipeSelection selection = nextCraftableRecipe(client.player, 0);
+        if (selection != null) {
+            armorPatternIndex = selection.armorIndex;
+            currentRecipe = selection.recipe;
             next(State.FIND_CRAFTING_TABLE);
+            return;
+        }
+        if (target() == CraftTarget.SWORD && client.player.getInventory().countItem(Items.STICK) <= 0) {
+            disable("Sticks are required for sword crafting");
             return;
         }
         if (!hasEmptyInventorySlot(client.player)) {
             disable("Inventory is full");
             return;
         }
-        emeraldsBeforeShop = emeralds;
+        emeraldsBeforeShop = client.player.getInventory().countItem(Items.EMERALD);
         next(State.OPEN_SHOP);
     }
 
@@ -211,6 +248,7 @@ public final class EmeraldArmorAutomation {
         if (emeralds > emeraldsBeforeShop) {
             closeContainer(client);
             armorPatternIndex = 0;
+            currentRecipe = null;
             next(State.FIND_CRAFTING_TABLE);
             return;
         }
@@ -259,51 +297,63 @@ public final class EmeraldArmorAutomation {
             next(State.WAIT_CRAFTING);
             return;
         }
-        if (armorPatternIndex >= ARMOR_PATTERNS.length) {
+        RecipeSelection selection = nextCraftableRecipe(client.player, armorPatternIndex);
+        if (selection == null) {
             closeContainer(client);
-            next(State.FIND_CHEST);
-            return;
-        }
-        int emeralds = client.player.getInventory().countItem(Items.EMERALD);
-        if (emeralds < ARMOR_PATTERNS[armorPatternIndex].length) {
-            int nextCraftable = nextCraftablePatternIndex(armorPatternIndex + 1, emeralds);
-            if (nextCraftable >= 0) {
-                armorPatternIndex = nextCraftable;
-                waitCraftAction();
-                return;
+            if (target() == CraftTarget.SWORD && client.player.getInventory().countItem(Items.STICK) <= 0 && !hasCraftedTargetInInventory(client.player)) {
+                disable("Sticks are required for sword crafting");
+            } else {
+                next(hasCraftedTargetInInventory(client.player) ? State.FIND_CHEST : State.CHECK_BALANCE);
             }
-            closeContainer(client);
-            next(State.FIND_CHEST);
             return;
         }
+        armorPatternIndex = selection.armorIndex;
+        currentRecipe = selection.recipe;
+
         int dirtySlot = findDirtyCraftingSlot(menu);
         if (dirtySlot >= 0) {
             click(client, dirtySlot, 0, ClickType.QUICK_MOVE);
             waitCraftAction();
             return;
         }
-        emeraldSourceSlot = findSlot(menu, Items.EMERALD, 10, menu.slots.size());
-        if (emeraldSourceSlot < 0) {
+        recipeGroupIndex = 0;
+        craftGridIndex = 0;
+        nextFast(State.PICKUP_CRAFT_ITEM);
+    }
+
+    private static void pickupCraftItem(Minecraft client) {
+        if (!(client.player.containerMenu instanceof CraftingMenu menu) || currentRecipe == null) {
+            next(State.WAIT_CRAFTING);
+            return;
+        }
+        if (recipeGroupIndex >= currentRecipe.groups.length) {
+            nextFast(State.TAKE_CRAFT_RESULT);
+            return;
+        }
+
+        IngredientGroup group = currentRecipe.groups[recipeGroupIndex];
+        ingredientSourceSlot = findSlot(menu, group.item, 10, menu.slots.size());
+        if (ingredientSourceSlot < 0) {
             closeContainer(client);
             next(State.CHECK_BALANCE);
             return;
         }
         craftGridIndex = 0;
-        click(client, emeraldSourceSlot, 0, ClickType.PICKUP);
+        click(client, ingredientSourceSlot, 0, ClickType.PICKUP);
         nextFast(State.PLACE_CRAFT_SLOT);
     }
 
     private static void placeCraftSlot(Minecraft client) {
-        if (!(client.player.containerMenu instanceof CraftingMenu)) {
+        if (!(client.player.containerMenu instanceof CraftingMenu) || currentRecipe == null) {
             next(State.WAIT_CRAFTING);
             return;
         }
-        int[] pattern = ARMOR_PATTERNS[armorPatternIndex];
-        if (craftGridIndex >= pattern.length) {
+        IngredientGroup group = currentRecipe.groups[recipeGroupIndex];
+        if (craftGridIndex >= group.slots.length) {
             nextFast(State.RETURN_EMERALDS);
             return;
         }
-        click(client, pattern[craftGridIndex], 1, ClickType.PICKUP);
+        click(client, group.slots[craftGridIndex], 1, ClickType.PICKUP);
         craftGridIndex++;
         waitCraftAction();
     }
@@ -313,15 +363,16 @@ public final class EmeraldArmorAutomation {
             next(State.WAIT_CRAFTING);
             return;
         }
-        if (emeraldSourceSlot < 10 || emeraldSourceSlot >= menu.slots.size()) {
-            emeraldSourceSlot = firstEmptyPlayerMenuSlot(menu);
+        if (ingredientSourceSlot < 10 || ingredientSourceSlot >= menu.slots.size()) {
+            ingredientSourceSlot = firstEmptyPlayerMenuSlot(menu);
         }
-        if (emeraldSourceSlot < 0) {
-            disable("Could not return emerald stack to inventory");
+        if (ingredientSourceSlot < 0) {
+            disable("Could not return ingredient stack to inventory");
             return;
         }
-        click(client, emeraldSourceSlot, 0, ClickType.PICKUP);
-        nextFast(State.TAKE_CRAFT_RESULT);
+        click(client, ingredientSourceSlot, 0, ClickType.PICKUP);
+        recipeGroupIndex++;
+        nextFast(recipeGroupIndex >= currentRecipe.groups.length ? State.TAKE_CRAFT_RESULT : State.PICKUP_CRAFT_ITEM);
     }
 
     private static void takeCraftResult(Minecraft client) {
@@ -332,7 +383,10 @@ public final class EmeraldArmorAutomation {
             return;
         }
         click(client, 0, 0, ClickType.QUICK_MOVE);
-        armorPatternIndex++;
+        if (target() == CraftTarget.ARMOR) {
+            armorPatternIndex++;
+        }
+        currentRecipe = null;
         nextFast(State.CRAFT_ARMOR);
     }
 
@@ -374,7 +428,7 @@ public final class EmeraldArmorAutomation {
         int playerInventoryStart = menu.getRowCount() * 9;
         for (int slot = playerInventoryStart; slot < menu.slots.size(); slot++) {
             ItemStack stack = menu.getSlot(slot).getItem();
-            if (isEmeraldArmor(stack)) {
+            if (isCraftedTarget(stack)) {
                 click(client, slot, 0, ClickType.QUICK_MOVE);
                 waitCraftAction();
                 return;
@@ -418,13 +472,26 @@ public final class EmeraldArmorAutomation {
         return -1;
     }
 
-    private static int nextCraftablePatternIndex(int fromIndex, int emeralds) {
-        for (int index = Math.max(0, fromIndex); index < ARMOR_PATTERNS.length; index++) {
-            if (emeralds >= ARMOR_PATTERNS[index].length) {
-                return index;
+    private static RecipeSelection nextCraftableRecipe(LocalPlayer player, int fromArmorIndex) {
+        if (target() == CraftTarget.SWORD) {
+            return canCraftRecipe(player, SWORD_RECIPE) ? new RecipeSelection(0, SWORD_RECIPE) : null;
+        }
+
+        for (int index = Math.max(0, fromArmorIndex); index < ARMOR_RECIPES.length; index++) {
+            if (canCraftRecipe(player, ARMOR_RECIPES[index])) {
+                return new RecipeSelection(index, ARMOR_RECIPES[index]);
             }
         }
-        return -1;
+        return null;
+    }
+
+    private static boolean canCraftRecipe(LocalPlayer player, RecipeSpec recipe) {
+        for (IngredientGroup group : recipe.groups) {
+            if (player.getInventory().countItem(group.item) < group.slots.length) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int findSlot(AbstractContainerMenu menu, net.minecraft.world.item.Item item, int from, int to) {
@@ -496,6 +563,29 @@ public final class EmeraldArmorAutomation {
 
     private static boolean hasEmptyInventorySlot(LocalPlayer player) {
         return player.getInventory().getFreeSlot() >= 0;
+    }
+
+    private static boolean hasCraftedTargetInInventory(LocalPlayer player) {
+        for (int slot = 0; slot < player.inventoryMenu.slots.size(); slot++) {
+            if (isCraftedTarget(player.inventoryMenu.getSlot(slot).getItem())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isCraftedTarget(ItemStack stack) {
+        return target() == CraftTarget.SWORD ? isEmeraldSword(stack) : isEmeraldArmor(stack);
+    }
+
+    private static boolean isEmeraldSword(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+        String name = stack.getHoverName().getString().toLowerCase();
+        boolean emeraldNamed = name.contains("emerald") || name.contains("РёР·СѓРјСЂСѓРґ");
+        boolean swordNamed = name.contains("sword") || name.contains("РјРµС‡");
+        return emeraldNamed && swordNamed;
     }
 
     private static boolean isEmeraldArmor(ItemStack stack) {
@@ -571,8 +661,10 @@ public final class EmeraldArmorAutomation {
         emeraldsBeforeShop = 0;
         emeraldPurchaseAttempt = 0;
         armorPatternIndex = 0;
+        recipeGroupIndex = 0;
         craftGridIndex = 0;
-        emeraldSourceSlot = -1;
+        ingredientSourceSlot = -1;
+        currentRecipe = null;
         targetBlock = null;
         if (nextState != State.IDLE) {
             lastError = "";
@@ -607,6 +699,34 @@ public final class EmeraldArmorAutomation {
         }
     }
 
+    private static RecipeSpec recipe(IngredientGroup... groups) {
+        return new RecipeSpec(groups);
+    }
+
+    private static IngredientGroup group(Item item, int... slots) {
+        return new IngredientGroup(item, slots);
+    }
+
+    private enum CraftTarget {
+        ARMOR("Armor"),
+        SWORD("Sword");
+
+        private final String title;
+
+        CraftTarget(String title) {
+            this.title = title;
+        }
+    }
+
+    private record RecipeSpec(IngredientGroup[] groups) {
+    }
+
+    private record IngredientGroup(Item item, int[] slots) {
+    }
+
+    private record RecipeSelection(int armorIndex, RecipeSpec recipe) {
+    }
+
     private enum State {
         IDLE("Idle"),
         CHECK_BALANCE("Checking emeralds"),
@@ -620,7 +740,8 @@ public final class EmeraldArmorAutomation {
         PATH_TO_CRAFTING_TABLE("Walking to crafting table"),
         OPEN_CRAFTING_TABLE("Opening crafting table"),
         WAIT_CRAFTING("Waiting crafting table"),
-        CRAFT_ARMOR("Crafting armor"),
+        CRAFT_ARMOR("Crafting item"),
+        PICKUP_CRAFT_ITEM("Picking ingredient"),
         PLACE_CRAFT_SLOT("Placing recipe"),
         RETURN_EMERALDS("Returning emeralds"),
         TAKE_CRAFT_RESULT("Taking craft result"),
