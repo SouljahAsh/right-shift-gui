@@ -481,9 +481,13 @@ public final class EmeraldArmorAutomation {
         try {
             Object provider = Class.forName("baritone.api.BaritoneAPI").getMethod("getProvider").invoke(null);
             Object baritone = provider.getClass().getMethod("getPrimaryBaritone").invoke(provider);
-            Object process = baritone.getClass().getMethod("getGetToBlockProcess").invoke(baritone);
-            Method pathTo = process.getClass().getMethod("pathTo", BlockPos.class);
-            pathTo.invoke(process, pos);
+            Object process = baritone.getClass().getMethod("getCustomGoalProcess").invoke(baritone);
+            Class<?> goalType = Class.forName("baritone.api.pathing.goals.Goal");
+            Object goal = Class.forName("baritone.api.pathing.goals.GoalGetToBlock")
+                    .getConstructor(BlockPos.class)
+                    .newInstance(pos);
+            Method setGoalAndPath = process.getClass().getMethod("setGoalAndPath", goalType);
+            setGoalAndPath.invoke(process, goal);
             return true;
         } catch (ReflectiveOperationException exception) {
             return false;
