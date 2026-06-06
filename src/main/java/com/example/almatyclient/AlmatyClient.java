@@ -555,8 +555,7 @@ public final class AlmatyClient implements ClientModInitializer {
 
         return Component.empty()
                 .append(Component.literal("[ ").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD))
-                .append(Component.literal("ITEM ").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD))
-                .append(Component.literal(label).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(label).withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD))
                 .append(Component.literal(" ]").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.BOLD));
     }
 
