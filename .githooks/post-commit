@@ -14,4 +14,24 @@ if [ -z "$remote" ]; then
   exit 0
 fi
 
-git push "$remote" "HEAD:$branch"
+merge_ref="$(git config --get "branch.$branch.merge" 2>/dev/null)"
+if [ -n "$merge_ref" ]; then
+  upstream_branch="${merge_ref#refs/heads/}"
+else
+  upstream_branch="$branch"
+fi
+
+git fetch "$remote" "$upstream_branch" || exit $?
+if git rev-parse --verify --quiet "refs/remotes/$remote/$upstream_branch" >/dev/null; then
+  git pull --rebase --autostash "$remote" "$upstream_branch" || exit $?
+fi
+
+if command -v cmd.exe >/dev/null 2>&1 && [ -f gradlew.bat ]; then
+  cmd.exe /c gradlew.bat build || exit $?
+elif [ -x ./gradlew ]; then
+  ./gradlew build || exit $?
+else
+  sh ./gradlew build || exit $?
+fi
+
+git push "$remote" "HEAD:$upstream_branch"
