@@ -248,33 +248,38 @@ public final class AlmatyClientScreen extends Screen {
         drawLargeStringFit(graphics, "AlmatyClient", this.panelX + 43, y + 23, sidebar - 58, 0xFFFFFFFF);
 
         int tabY = y + 66;
+        boolean compact = compactSidebar();
         for (Tab tab : Tab.values()) {
             boolean active = tab == this.activeTab;
             boolean collapsed = this.collapsedTabs[tab.ordinal()];
-            int islandHeight = collapsed ? 38 : 76;
+            int islandHeight = tabHeight(tab);
             int rowY = tabY;
             int rowX = this.panelX + 14;
             int rowW = sidebar - 28;
             drawRoundedRect(graphics, rowX, rowY, rowW, islandHeight, 8, active ? 0xAA101828 : 0x77101828);
             if (active) {
-                drawRoundedRect(graphics, rowX, rowY, rowW, 38, 8, AlmatyClient.accentColor(135));
-                graphics.fill(rowX, rowY + 8, rowX + 3, rowY + 30, accent);
+                drawRoundedRect(graphics, rowX, rowY, rowW, Math.min(38, islandHeight), 8, AlmatyClient.accentColor(135));
+                graphics.fill(rowX, rowY + 8, rowX + 3, rowY + Math.min(30, islandHeight - 8), accent);
             }
-            drawStringFit(graphics, tab.icon, rowX + 14, rowY + 11, 16, active ? 0xFFFFFFFF : 0xFF758099);
-            drawLargeStringFit(graphics, tab.title, rowX + 38, rowY + 9, rowW - 64, active ? 0xFFFFFFFF : 0xFFADB4C8);
-            drawStringFit(graphics, collapsed ? "+" : "-", rowX + rowW - 20, rowY + 11, 14, active ? 0xFFFFFFFF : 0xFF8F98B1);
+            drawStringFit(graphics, tab.icon, rowX + 14, rowY + (compact ? 8 : 11), 16, active ? 0xFFFFFFFF : 0xFF758099);
+            drawLargeStringFit(graphics, tab.title, rowX + 38, rowY + (compact ? 6 : 9), rowW - 64, active ? 0xFFFFFFFF : 0xFFADB4C8);
+            if (!compact) {
+                drawStringFit(graphics, collapsed ? "+" : "-", rowX + rowW - 20, rowY + 11, 14, active ? 0xFFFFFFFF : 0xFF8F98B1);
+            }
 
-            if (!collapsed) {
+            if (!compact && !collapsed) {
                 drawRoundedRect(graphics, rowX + 10, rowY + 44, rowW - 20, 24, 6, active ? 0x66151B2A : 0x44151B2A);
                 drawStringFit(graphics, moduleTitle(tab), rowX + 20, rowY + 51, rowW - 40, active ? 0xFFE7ECFF : 0xFF9BA3B7);
             }
-            tabY += islandHeight + 10;
+            tabY += islandHeight + tabGap();
         }
 
         int cardY = y + this.panelHeight - 86;
-        graphics.fill(this.panelX + 14, cardY, this.panelX + sidebar - 14, cardY + 54, 0x77101828);
-        drawStringFit(graphics, "v1.0.0", this.panelX + 26, cardY + 12, sidebar - 52, 0xFF8F98B1);
-        drawLargeStringFit(graphics, "Release", this.panelX + 26, cardY + 27, sidebar - 52, accent);
+        if (!compact && cardY > tabY + 8) {
+            graphics.fill(this.panelX + 14, cardY, this.panelX + sidebar - 14, cardY + 54, 0x77101828);
+            drawStringFit(graphics, "v1.0.0", this.panelX + 26, cardY + 12, sidebar - 52, 0xFF8F98B1);
+            drawLargeStringFit(graphics, "Release", this.panelX + 26, cardY + 27, sidebar - 52, accent);
+        }
     }
 
     private void drawTopBar(GuiGraphics graphics, int y) {
@@ -336,6 +341,7 @@ public final class AlmatyClientScreen extends Screen {
             drawModuleCard(graphics, x, y, w, "Particles", "Water bubbles when hitting entities.", AlmatyClient.isParticlesEnabled(), true);
         } else if (this.activeTab == Tab.PLAYERS) {
             drawModuleCard(graphics, x, y, w, "ESP", "Boxes and labels for selected entities.", AlmatyClient.isEspEnabled(), true);
+            drawModuleCard(graphics, x, y + 82, w, "InventoryWalk", "Move while inventory and GUI screens are open.", AlmatyClient.isInventoryWalkEnabled(), true);
         } else if (this.activeTab == Tab.OTHER) {
             drawModuleCard(graphics, x, y, w, "Colors", "Adjust the client accent color.", true, true);
             drawSmallActionButton(graphics, resetButtonX(), resetButtonY(), resetButtonWidth(), RESET_BUTTON_HEIGHT, "Reset GUI");
@@ -385,6 +391,7 @@ public final class AlmatyClientScreen extends Screen {
             drawCheckRow(graphics, x, y + 178, w, "Items", AlmatyClient.espItems());
             drawCheckRow(graphics, x, y + 238, w, "Name", AlmatyClient.espName());
             drawCheckRow(graphics, x, y + 278, w, "Health", AlmatyClient.espHealth());
+            drawSettingToggle(graphics, x, y + 328, w, "InventoryWalk", "Keeps movement keys active while screens are open.", AlmatyClient.isInventoryWalkEnabled());
         } else if (this.activeTab == Tab.OTHER) {
             drawDetailHeader(graphics, x, y, w, "Color", true);
             drawColorSlider(graphics, x + 22, y + 106, w - 44, "Red", AlmatyClient.guiRed(), 0);
@@ -504,6 +511,10 @@ public final class AlmatyClientScreen extends Screen {
                 return true;
             }
         } else if (this.activeTab == Tab.PLAYERS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
+                AlmatyClient.setInventoryWalkEnabled(!AlmatyClient.isInventoryWalkEnabled());
+                return true;
+            }
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
                     || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90)) {
                 AlmatyClient.setEspEnabled(!AlmatyClient.isEspEnabled());
@@ -536,7 +547,8 @@ public final class AlmatyClientScreen extends Screen {
         }
 
         int y = (int) Math.round(mouseY + this.contentScroll);
-        boolean moduleCard = inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70);
+        boolean moduleCard = inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                || (this.activeTab == Tab.PLAYERS && inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70));
         boolean detailHeader = inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90);
         if (!moduleCard && !detailHeader) {
             return null;
@@ -552,6 +564,9 @@ public final class AlmatyClientScreen extends Screen {
             return ClientModule.PARTICLES;
         }
         if (this.activeTab == Tab.PLAYERS) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
+                return ClientModule.INVENTORY_WALK;
+            }
             return ClientModule.ESP;
         }
         return null;
@@ -631,6 +646,10 @@ public final class AlmatyClientScreen extends Screen {
             AlmatyClient.setEspHealth(!AlmatyClient.espHealth());
             return true;
         }
+        if (inside(mouseX, y, x + 20, base + 328, w - 40, 48)) {
+            AlmatyClient.setInventoryWalkEnabled(!AlmatyClient.isInventoryWalkEnabled());
+            return true;
+        }
         return false;
     }
 
@@ -694,11 +713,11 @@ public final class AlmatyClientScreen extends Screen {
         int w = sidebar - 28;
         int y = this.panelY + 66;
         for (Tab tab : Tab.values()) {
-            int h = this.collapsedTabs[tab.ordinal()] ? 38 : 76;
+            int h = tabHeight(tab);
             if (inside(mouseX, mouseY, x, y, w, h)) {
                 return tab;
             }
-            y += h + 10;
+            y += h + tabGap();
         }
         return null;
     }
@@ -822,6 +841,21 @@ public final class AlmatyClientScreen extends Screen {
         return Math.max(142, Math.min(184, this.panelWidth / 4));
     }
 
+    private boolean compactSidebar() {
+        return this.panelHeight < 410;
+    }
+
+    private int tabHeight(Tab tab) {
+        if (compactSidebar()) {
+            return 32;
+        }
+        return this.collapsedTabs[tab.ordinal()] ? 38 : 76;
+    }
+
+    private int tabGap() {
+        return compactSidebar() ? 6 : 10;
+    }
+
     private int moduleListX() {
         return this.panelX + sidebarWidth() + 18;
     }
@@ -875,7 +909,7 @@ public final class AlmatyClientScreen extends Screen {
             return 460;
         }
         if (this.activeTab == Tab.PLAYERS) {
-            return 340;
+            return 400;
         }
         if (this.activeTab == Tab.OTHER) {
             return 350;
@@ -937,7 +971,7 @@ public final class AlmatyClientScreen extends Screen {
             return "Particles";
         }
         if (tab == Tab.PLAYERS) {
-            return "ESP";
+            return "ESP / InventoryWalk";
         }
         return "Colors";
     }

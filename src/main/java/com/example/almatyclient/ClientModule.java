@@ -44,6 +44,17 @@ public enum ClientModule {
         public void setEnabled(boolean enabled) {
             AlmatyClient.setEspEnabled(enabled);
         }
+    },
+    INVENTORY_WALK("inventoryWalk", "InventoryWalk") {
+        @Override
+        public boolean isEnabled() {
+            return AlmatyClient.isInventoryWalkEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            AlmatyClient.setInventoryWalkEnabled(enabled);
+        }
     };
 
     private final String id;

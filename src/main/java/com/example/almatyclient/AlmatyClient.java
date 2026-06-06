@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
@@ -36,6 +37,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final String AUTO_SPRINT_KEY = "feature.autoSprint";
     private static final String PARTICLES_KEY = "feature.particles";
     private static final String ESP_KEY = "feature.esp";
+    private static final String INVENTORY_WALK_KEY = "feature.inventoryWalk";
     private static final String ESP_PLAYERS_KEY = "esp.players";
     private static final String ESP_MOBS_KEY = "esp.mobs";
     private static final String ESP_ITEMS_KEY = "esp.items";
@@ -60,6 +62,7 @@ public final class AlmatyClient implements ClientModInitializer {
     );
 
     private static boolean sprintKeyForced;
+    private static boolean inventoryWalkForced;
     private static int forwardTicks;
 
     private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
@@ -90,6 +93,7 @@ public final class AlmatyClient implements ClientModInitializer {
             }
 
             tickAutoSprint(client);
+            tickInventoryWalk(client);
         });
 
         WorldRenderEvents.AFTER_ENTITIES.register(AlmatyClient::renderWorldOverlays);
@@ -162,6 +166,17 @@ public final class AlmatyClient implements ClientModInitializer {
 
     public static void setEspEnabled(boolean enabled) {
         AlmatyConfig.setBoolean(ESP_KEY, enabled);
+    }
+
+    public static boolean isInventoryWalkEnabled() {
+        return AlmatyConfig.getBoolean(INVENTORY_WALK_KEY, false);
+    }
+
+    public static void setInventoryWalkEnabled(boolean enabled) {
+        AlmatyConfig.setBoolean(INVENTORY_WALK_KEY, enabled);
+        if (!enabled) {
+            releaseInventoryWalk(Minecraft.getInstance());
+        }
     }
 
     public static boolean espPlayers() {
@@ -263,6 +278,37 @@ public final class AlmatyClient implements ClientModInitializer {
             client.options.keySprint.setDown(false);
             sprintKeyForced = false;
         }
+    }
+
+    private static void tickInventoryWalk(Minecraft client) {
+        if (!isInventoryWalkEnabled() || client.player == null || client.level == null || client.options == null || client.screen == null) {
+            releaseInventoryWalk(client);
+            return;
+        }
+
+        if (client.screen instanceof ChatScreen || client.screen.isPauseScreen()) {
+            releaseInventoryWalk(client);
+            return;
+        }
+
+        KeyMapping.setAll();
+        inventoryWalkForced = true;
+    }
+
+    private static void releaseInventoryWalk(Minecraft client) {
+        if (!inventoryWalkForced || client.options == null) {
+            inventoryWalkForced = false;
+            return;
+        }
+
+        client.options.keyUp.setDown(false);
+        client.options.keyDown.setDown(false);
+        client.options.keyLeft.setDown(false);
+        client.options.keyRight.setDown(false);
+        client.options.keyJump.setDown(false);
+        client.options.keySprint.setDown(false);
+        client.options.keyShift.setDown(false);
+        inventoryWalkForced = false;
     }
 
     private static boolean isEspTarget(Entity entity) {
