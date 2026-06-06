@@ -25,7 +25,7 @@ public final class EmeraldArmorAutomation {
     private static final String ENABLED_KEY = "feature.emeraldArmorAutoCraft";
     private static final int EMERALDS_PER_BUY = 64;
     private static final int ACTION_DELAY_TICKS = 8;
-    private static final int CRAFT_DELAY_TICKS = 2;
+    private static final int CRAFT_DELAY_TICKS = 1;
     private static final int GUI_TIMEOUT_TICKS = 100;
     private static final int BUY_RETRY_DELAY_TICKS = 12;
     private static final int BUY_CLICK_ATTEMPTS = 6;
@@ -376,7 +376,7 @@ public final class EmeraldArmorAutomation {
             ItemStack stack = menu.getSlot(slot).getItem();
             if (isEmeraldArmor(stack)) {
                 click(client, slot, 0, ClickType.QUICK_MOVE);
-                waitAction();
+                waitCraftAction();
                 return;
             }
         }
@@ -397,7 +397,7 @@ public final class EmeraldArmorAutomation {
         BlockHitResult hitResult = new BlockHitResult(hit, Direction.UP, targetBlock, false);
         client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hitResult);
         client.player.swing(InteractionHand.MAIN_HAND);
-        next(nextState);
+        nextFast(nextState);
     }
 
     private static int findDirtyCraftingSlot(AbstractContainerMenu menu) {
