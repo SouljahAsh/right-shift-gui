@@ -23,7 +23,7 @@ public abstract class TitleScreenMixin extends Screen {
             "textures/gui/almaty_client_logo.png"
     );
     private static final int LOGO_TEXTURE_WIDTH = 1024;
-    private static final int LOGO_TEXTURE_HEIGHT = 240;
+    private static final int LOGO_TEXTURE_HEIGHT = 214;
 
     protected TitleScreenMixin(Component title) {
         super(title);
