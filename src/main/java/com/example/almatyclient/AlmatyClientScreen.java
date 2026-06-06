@@ -337,6 +337,8 @@ public final class AlmatyClientScreen extends Screen {
             drawModuleCard(graphics, x, y, w, "Sprint", "Automatically sprints when moving forward.", AlmatyClient.isAutoSprintEnabled(), true);
         } else if (this.activeTab == Tab.COMBAT) {
             drawModuleCard(graphics, x, y, w, "Aura", "Attacks selected targets in range.", CombatAutomation.isAuraEnabled(), true);
+        } else if (this.activeTab == Tab.PVE) {
+            drawModuleCard(graphics, x, y, w, "Emerald AutoCraft", "Loops shop buying, crafting, and chest storage.", EmeraldArmorAutomation.isEnabled(), true);
         } else if (this.activeTab == Tab.VISUALS) {
             drawModuleCard(graphics, x, y, w, "Particles", "Water bubbles when hitting entities.", AlmatyClient.isParticlesEnabled(), true);
             drawModuleCard(graphics, x, y + 82, w, "Fullbright", "Keeps caves and dark areas fully visible.", AlmatyClient.isFullbrightEnabled(), true);
@@ -385,6 +387,10 @@ public final class AlmatyClientScreen extends Screen {
             drawSettingToggle(graphics, x, y + 306, w, "Rotate To Target", "Looks at the target hitbox center.", CombatAutomation.auraRotate());
             drawCheckRow(graphics, x, y + 366, w, "Players", CombatAutomation.auraPlayers());
             drawCheckRow(graphics, x, y + 406, w, "Mobs", CombatAutomation.auraMobs());
+        } else if (this.activeTab == Tab.PVE) {
+            drawDetailHeader(graphics, x, y, w, "Emerald AutoCraft", EmeraldArmorAutomation.isEnabled());
+            drawSettingRow(graphics, x, y + 98, w, "State", "Current automation stage.", EmeraldArmorAutomation.stateText());
+            drawSettingRow(graphics, x, y + 154, w, "Last Error", "Why the module stopped.", EmeraldArmorAutomation.lastError());
         } else if (this.activeTab == Tab.VISUALS) {
             drawDetailHeader(graphics, x, y, w, "Particles", AlmatyClient.isParticlesEnabled());
             drawSettingToggle(graphics, x, y + 98, w, "Water Bubbles", "Spawn bubbles after entity hits.", AlmatyClient.isParticlesEnabled());
@@ -512,6 +518,12 @@ public final class AlmatyClientScreen extends Screen {
                 return true;
             }
             return clickAuraDetail(mouseX, y);
+        } else if (this.activeTab == Tab.PVE) {
+            if (inside(mouseX, y, moduleListX(), contentViewportY() + 58, moduleListWidth(), 70)
+                    || inside(mouseX, y, detailX(), contentViewportY(), detailWidth(), 90)) {
+                EmeraldArmorAutomation.toggle();
+                return true;
+            }
         } else if (this.activeTab == Tab.VISUALS) {
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
                 AlmatyClient.setFullbrightEnabled(!AlmatyClient.isFullbrightEnabled());
@@ -588,6 +600,9 @@ public final class AlmatyClientScreen extends Screen {
         }
         if (this.activeTab == Tab.COMBAT) {
             return ClientModule.AURA;
+        }
+        if (this.activeTab == Tab.PVE) {
+            return ClientModule.EMERALD_ARMOR_AUTOCRAFT;
         }
         if (this.activeTab == Tab.VISUALS) {
             if (inside(mouseX, y, moduleListX(), contentViewportY() + 140, moduleListWidth(), 70)) {
@@ -1035,6 +1050,9 @@ public final class AlmatyClientScreen extends Screen {
         if (tab == Tab.COMBAT) {
             return "Aura";
         }
+        if (tab == Tab.PVE) {
+            return "Emerald AutoCraft";
+        }
         if (tab == Tab.VISUALS) {
             return "Particles / Fullbright";
         }
@@ -1087,6 +1105,7 @@ public final class AlmatyClientScreen extends Screen {
     private enum Tab {
         MOVEMENT("Movement", "Improve your movement.", "M"),
         COMBAT("Combat", "Automated combat modules.", "C"),
+        PVE("PVE", "Automated PvE routines.", "E"),
         VISUALS("Visuals", "Client-side effects.", "V"),
         PLAYERS("Players", "Entity ESP controls.", "P"),
         OTHER("Other", "Interface settings.", "O");

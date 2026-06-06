@@ -23,6 +23,17 @@ public enum ClientModule {
             CombatAutomation.setAuraEnabled(enabled);
         }
     },
+    EMERALD_ARMOR_AUTOCRAFT("emeraldArmorAutoCraft", "Emerald Armor AutoCraft") {
+        @Override
+        public boolean isEnabled() {
+            return EmeraldArmorAutomation.isEnabled();
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            EmeraldArmorAutomation.setEnabled(enabled);
+        }
+    },
     PARTICLES("particles", "Particles") {
         @Override
         public boolean isEnabled() {
