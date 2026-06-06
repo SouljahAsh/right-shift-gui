@@ -29,6 +29,8 @@ public final class CombatAutomation {
     private static final int MOVE_LEAP_IN = 1;
     private static final int TARGET_NEAREST = 0;
     private static final int TARGET_LOWEST_HEALTH = 1;
+    private static final double PLAYER_TARGET_RANGE = 4.5D;
+    private static final double PLAYER_TARGET_RANGE_SQ = PLAYER_TARGET_RANGE * PLAYER_TARGET_RANGE;
     private static final double ATTACK_REACH = 2.95D;
     private static final double ATTACK_REACH_SQ = ATTACK_REACH * ATTACK_REACH;
     private static final double LEAP_STOP_DISTANCE = 2.55D;
@@ -146,6 +148,55 @@ public final class CombatAutomation {
             return null;
         }
         return findTarget(client, player, clampTrainingRadius(radiusBlocks));
+    }
+
+    public static Player getTarget(Minecraft client) {
+        if (client == null || client.level == null || client.player == null || !canRunAura(client)) {
+            return null;
+        }
+
+        LocalPlayer player = client.player;
+        Vec3 eyePosition = player.getEyePosition();
+        Player bestTarget = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        AABB scanBox = player.getBoundingBox().inflate(PLAYER_TARGET_RANGE);
+
+        for (Entity entity : client.level.getEntities(player, scanBox, candidate -> candidate instanceof Player)) {
+            if (!(entity instanceof Player target) || target == player || !target.isAlive() || target.isSpectator()) {
+                continue;
+            }
+
+            double distanceSq = distanceToHitboxSqr(eyePosition, target.getBoundingBox());
+            if (distanceSq > PLAYER_TARGET_RANGE_SQ || distanceSq >= bestDistanceSq) {
+                continue;
+            }
+
+            bestTarget = target;
+            bestDistanceSq = distanceSq;
+        }
+
+        return bestTarget;
+    }
+
+    public static boolean attackTarget(Minecraft client, Player target) {
+        if (client == null || client.player == null || client.gameMode == null || target == null || !canRunAura(client)) {
+            return false;
+        }
+
+        LocalPlayer player = client.player;
+        if (target == player || !target.isAlive() || target.isSpectator()) {
+            return false;
+        }
+        if (distanceToHitboxSqr(player.getEyePosition(), target.getBoundingBox()) > PLAYER_TARGET_RANGE_SQ) {
+            return false;
+        }
+        if (player.getAttackStrengthScale(0.0F) < 1.0F) {
+            return false;
+        }
+
+        client.gameMode.attack(player, target);
+        player.swing(InteractionHand.MAIN_HAND);
+        return true;
     }
 
     private static Entity findTarget(Minecraft client, LocalPlayer player, double radiusBlocks) {
