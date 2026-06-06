@@ -7,5 +7,8 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 @Mixin(Minecraft.class)
 public interface MinecraftRightClickAccessor {
     @Accessor("rightClickDelay")
+    int almatyclient$getRightClickDelay();
+
+    @Accessor("rightClickDelay")
     void almatyclient$setRightClickDelay(int delay);
 }

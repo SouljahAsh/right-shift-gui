@@ -55,6 +55,7 @@ public final class AlmatyClient implements ClientModInitializer {
     private static final int ESP_LINE_WIDTH = 2;
     private static final int DEFAULT_SPRINT_START_DELAY_TICKS = 1;
     private static final int MAX_SPRINT_START_DELAY_TICKS = 10;
+    private static final int FAST_PLACE_DELAY_TICKS = 2;
 
     private static final RenderPipeline ESP_LINES_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
             .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "esp_lines"))
@@ -372,7 +373,10 @@ public final class AlmatyClient implements ClientModInitializer {
             return;
         }
 
-        ((MinecraftRightClickAccessor) client).almatyclient$setRightClickDelay(0);
+        MinecraftRightClickAccessor accessor = (MinecraftRightClickAccessor) client;
+        if (accessor.almatyclient$getRightClickDelay() > FAST_PLACE_DELAY_TICKS) {
+            accessor.almatyclient$setRightClickDelay(FAST_PLACE_DELAY_TICKS);
+        }
     }
 
     private static void tickFullbright(Minecraft client) {

@@ -5,6 +5,7 @@
   "client": [
     "ClientPacketListenerAccessor",
     "EntityRendererMixin",
+    "LightTextureFullbrightMixin",
     "LivingEntityJumpAccessor",
     "MinecraftRightClickAccessor",
     "MinecraftUserAccessor",
