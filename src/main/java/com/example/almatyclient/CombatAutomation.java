@@ -72,7 +72,7 @@ public final class CombatAutomation {
         LocalPlayer player = client.player;
         Entity target = lockedTarget(client, player);
         if (target == null) {
-            target = findTarget(client, player);
+            target = findTarget(client, player, auraRange());
             lockedTargetId = target == null ? -1 : target.getId();
         }
         if (target == null) {
@@ -141,13 +141,21 @@ public final class CombatAutomation {
         return entity;
     }
 
-    private static Entity findTarget(Minecraft client, LocalPlayer player) {
+    public static Entity findLocalTrainingTarget(Minecraft client, LocalPlayer player, double radiusBlocks) {
+        if (client == null || player == null || client.level == null || !canRunAura(client)) {
+            return null;
+        }
+        return findTarget(client, player, clampTrainingRadius(radiusBlocks));
+    }
+
+    private static Entity findTarget(Minecraft client, LocalPlayer player, double radiusBlocks) {
         Vec3 eyePosition = player.getEyePosition();
         Entity bestTarget = null;
-        double rangeSq = auraRange() * auraRange();
+        double rangeSq = radiusBlocks * radiusBlocks;
         double bestScore = Double.MAX_VALUE;
+        AABB scanBox = player.getBoundingBox().inflate(radiusBlocks);
 
-        for (Entity entity : client.level.entitiesForRendering()) {
+        for (Entity entity : client.level.getEntities(player, scanBox, entity -> isValidTarget(player, entity))) {
             if (!isValidTarget(player, entity)) {
                 continue;
             }
@@ -169,6 +177,9 @@ public final class CombatAutomation {
 
     private static boolean isValidTarget(LocalPlayer player, Entity entity) {
         if (!(entity instanceof LivingEntity) || entity == player || !entity.isAlive() || !entity.isAttackable() || entity.isSpectator()) {
+            return false;
+        }
+        if (!player.hasLineOfSight(entity)) {
             return false;
         }
         if (entity instanceof Player) {
@@ -358,6 +369,10 @@ public final class CombatAutomation {
 
     private static int clampRangeBlocks(int value) {
         return Math.max(MIN_RANGE_BLOCKS, Math.min(MAX_RANGE_BLOCKS, value));
+    }
+
+    private static double clampTrainingRadius(double radiusBlocks) {
+        return Math.max(4.0D, Math.min(5.0D, radiusBlocks));
     }
 
     private static void clearLockedTarget() {
