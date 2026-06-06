@@ -3,6 +3,7 @@ package com.example.almatyclient;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -13,6 +14,7 @@ import net.minecraft.world.phys.Vec3;
 
 public final class CombatAutomation {
     private static final String AURA_ENABLED_KEY = "aura.enabled";
+    private static final String AURA_RANGE_BLOCKS_KEY = "aura.rangeBlocks";
     private static final String AURA_RANGE_TENTHS_KEY = "aura.rangeTenths";
     private static final String AURA_ROTATE_KEY = "aura.rotate";
     private static final String AURA_PLAYERS_KEY = "aura.players";
@@ -20,10 +22,9 @@ public final class CombatAutomation {
     private static final String AURA_JUMP_ONLY_KEY = "aura.jumpOnly";
     private static final String AURA_MOVE_MODE_KEY = "aura.moveMode";
     private static final String AURA_TARGET_MODE_KEY = "aura.targetMode";
-    private static final int DEFAULT_RANGE_TENTHS = 40;
-    private static final int MIN_RANGE_TENTHS = 20;
-    private static final int MAX_RANGE_TENTHS = 60;
-    private static final int RANGE_STEP_TENTHS = 5;
+    private static final int DEFAULT_RANGE_BLOCKS = 4;
+    private static final int MIN_RANGE_BLOCKS = 2;
+    private static final int MAX_RANGE_BLOCKS = 6;
     private static final int MOVE_HOLD_POSITION = 0;
     private static final int MOVE_LEAP_IN = 1;
     private static final int TARGET_NEAREST = 0;
@@ -32,7 +33,7 @@ public final class CombatAutomation {
     private static final double ATTACK_REACH_SQ = ATTACK_REACH * ATTACK_REACH;
     private static final double LEAP_STOP_DISTANCE = 2.55D;
     private static final double LEAP_STOP_DISTANCE_SQ = LEAP_STOP_DISTANCE * LEAP_STOP_DISTANCE;
-    private static final float CRITICAL_FALL_DISTANCE = 0.11F;
+    private static final double CRITICAL_FALL_SPEED = -0.001D;
     private static final float AIM_TOLERANCE = 0.35F;
     private static final int REQUIRED_AIM_READY_TICKS = 1;
     private static final int ATTACK_SYNC_TICKS = 3;
@@ -104,6 +105,9 @@ public final class CombatAutomation {
         if (!isInAttackReach(player, target)) {
             return;
         }
+        if (auraJumpOnly()) {
+            prepareCriticalAttack(client, player);
+        }
         if (auraJumpOnly() && !isCriticalWindow(player)) {
             return;
         }
@@ -139,7 +143,7 @@ public final class CombatAutomation {
                 continue;
             }
 
-            double distanceSq = eyePosition.distanceToSqr(hitboxCenter(entity));
+            double distanceSq = distanceToHitboxSqr(eyePosition, entity.getBoundingBox());
             if (distanceSq > rangeSq) {
                 continue;
             }
@@ -208,13 +212,27 @@ public final class CombatAutomation {
         }
     }
 
+    private static void prepareCriticalAttack(Minecraft client, LocalPlayer player) {
+        if (!player.isSprinting()) {
+            return;
+        }
+
+        player.setSprinting(false);
+        player.connection.send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.STOP_SPRINTING));
+        if (client.options != null) {
+            client.options.keySprint.setDown(false);
+        }
+    }
+
     private static boolean isCriticalWindow(LocalPlayer player) {
-        return !player.onGround()
-                && player.fallDistance >= CRITICAL_FALL_DISTANCE
+        return player.fallDistance > 0.0D
+                && player.getDeltaMovement().y <= CRITICAL_FALL_SPEED
+                && !player.onGround()
                 && !player.isInWater()
-                && !player.isInLava()
                 && !player.onClimbable()
-                && !player.isPassenger();
+                && !player.isMobilityRestricted()
+                && !player.isPassenger()
+                && !player.isSprinting();
     }
 
     private static boolean isInAttackReach(LocalPlayer player, Entity target) {
@@ -254,16 +272,15 @@ public final class CombatAutomation {
     }
 
     public static double auraRange() {
-        return clampRangeTenths(AlmatyConfig.getInt(AURA_RANGE_TENTHS_KEY, DEFAULT_RANGE_TENTHS)) / 10.0D;
+        return auraRangeBlocks();
     }
 
     public static void cycleAuraRange() {
-        int range = clampRangeTenths(AlmatyConfig.getInt(AURA_RANGE_TENTHS_KEY, DEFAULT_RANGE_TENTHS));
-        range += RANGE_STEP_TENTHS;
-        if (range > MAX_RANGE_TENTHS) {
-            range = MIN_RANGE_TENTHS;
+        int range = auraRangeBlocks() + 1;
+        if (range > MAX_RANGE_BLOCKS) {
+            range = MIN_RANGE_BLOCKS;
         }
-        AlmatyConfig.setInt(AURA_RANGE_TENTHS_KEY, range);
+        AlmatyConfig.setInt(AURA_RANGE_BLOCKS_KEY, range);
     }
 
     public static boolean auraRotate() {
@@ -324,8 +341,14 @@ public final class CombatAutomation {
         return auraTargetMode() == TARGET_LOWEST_HEALTH ? "Lowest Health" : "Nearest";
     }
 
-    private static int clampRangeTenths(int value) {
-        return Math.max(MIN_RANGE_TENTHS, Math.min(MAX_RANGE_TENTHS, value));
+    private static int auraRangeBlocks() {
+        int legacyTenths = AlmatyConfig.getInt(AURA_RANGE_TENTHS_KEY, DEFAULT_RANGE_BLOCKS * 10);
+        int fallbackBlocks = Math.round(legacyTenths / 10.0F);
+        return clampRangeBlocks(AlmatyConfig.getInt(AURA_RANGE_BLOCKS_KEY, fallbackBlocks));
+    }
+
+    private static int clampRangeBlocks(int value) {
+        return Math.max(MIN_RANGE_BLOCKS, Math.min(MAX_RANGE_BLOCKS, value));
     }
 
     private static void clearLockedTarget() {

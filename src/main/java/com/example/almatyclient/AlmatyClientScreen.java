@@ -1025,7 +1025,7 @@ public final class AlmatyClientScreen extends Screen {
     }
 
     private static String auraRangeText() {
-        return String.format(java.util.Locale.ROOT, "%.1f blocks", CombatAutomation.auraRange());
+        return (int) CombatAutomation.auraRange() + " blocks";
     }
 
     private static String moduleTitle(Tab tab) {
